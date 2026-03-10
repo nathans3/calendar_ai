@@ -1,0 +1,136 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Calendar, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { api, saveSession, ApiError } from '../../lib/api'
+
+export default function SignupPage() {
+  const router = useRouter()
+  const [form, setForm] = useState({ fullName: '', email: '', schoolName: '', password: '' })
+  const [showPw, setShowPw] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (form.password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    setLoading(true); setError('')
+    try {
+      const { token, user } = await api.auth.signup({
+        email: form.email,
+        password: form.password,
+        fullName: form.fullName,
+        schoolName: form.schoolName,
+      })
+      saveSession(token, user)
+      setSuccess(true)
+      setTimeout(() => router.replace('/app'), 800)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-cream-100 flex flex-col">
+      <nav className="border-b border-ink-900/8 bg-cream-100/90 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="w-8 h-8 bg-ink-900 rounded-lg flex items-center justify-center group-hover:bg-sage transition-colors">
+              <Calendar className="w-4 h-4 text-cream-100" />
+            </div>
+            <span className="font-display text-lg text-ink-900">Calendar AI</span>
+          </Link>
+          <Link href="/login" className="btn-secondary py-2 px-4 text-sm">Log in</Link>
+        </div>
+      </nav>
+
+      <main className="flex-1 flex items-center justify-center px-6 py-12">
+        <div className="w-full max-w-md page-enter">
+          <div className="text-center mb-8">
+            <h1 className="font-display text-4xl text-ink-900 mb-2">Create your account</h1>
+            <p className="font-body text-sm text-ink-500">Start planning smarter in minutes.</p>
+          </div>
+
+          {success ? (
+            <div className="card p-8 text-center">
+              <div className="w-14 h-14 bg-sage/12 rounded-full flex items-center justify-center mx-auto mb-4">
+                <CheckCircle2 className="w-7 h-7 text-sage" />
+              </div>
+              <h2 className="font-display text-2xl text-ink-900 mb-2">Account created!</h2>
+              <p className="font-body text-sm text-ink-500">Taking you to your dashboard…</p>
+            </div>
+          ) : (
+            <div className="card p-8">
+              {error && (
+                <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-5">
+                  <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <p className="font-body text-sm text-red-700">{error}</p>
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="label">Full name</label>
+                  <input type="text" placeholder="Rebecca Martinez" value={form.fullName}
+                    onChange={e => setForm({ ...form, fullName: e.target.value })}
+                    className="input-field" autoFocus />
+                </div>
+                <div>
+                  <label className="label">School / District <span className="text-ink-400 font-normal">(optional)</span></label>
+                  <input type="text" placeholder="Jefferson Preparatory School" value={form.schoolName}
+                    onChange={e => setForm({ ...form, schoolName: e.target.value })}
+                    className="input-field" />
+                </div>
+                <div>
+                  <label className="label">Email</label>
+                  <input type="email" required placeholder="you@school.edu" value={form.email}
+                    onChange={e => setForm({ ...form, email: e.target.value })}
+                    className="input-field" />
+                </div>
+                <div>
+                  <label className="label">Password</label>
+                  <div className="relative">
+                    <input type={showPw ? 'text' : 'password'} required placeholder="Min. 6 characters"
+                      value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+                      className="input-field pr-10" />
+                    <button type="button" onClick={() => setShowPw(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors">
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <button type="submit" disabled={loading || !form.email || !form.password}
+                  className={`btn-sage w-full justify-center py-3 mt-2 ${loading || !form.email || !form.password ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Creating account…
+                    </span>
+                  ) : 'Create account'}
+                </button>
+              </form>
+
+              <p className="font-body text-xs text-ink-400 text-center mt-5">
+                By signing up you agree to our{' '}
+                <span className="underline underline-offset-2 cursor-pointer">Terms of Service</span>.
+              </p>
+
+              <div className="mt-5 pt-5 border-t border-ink-900/8 text-center">
+                <p className="font-body text-sm text-ink-500">
+                  Already have an account?{' '}
+                  <Link href="/login" className="text-ink-900 font-medium hover:text-sage transition-colors underline underline-offset-2">Log in</Link>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  )
+}

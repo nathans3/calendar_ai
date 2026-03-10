@@ -1,0 +1,216 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'DM Serif Display', serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+
+  /* Core palette */
+  --color-ink: #0D0D0D;
+  --color-cream: #FAF8F2;
+  --color-sage: #7A9E7E;
+  --color-sage-light: #B0CEB4;
+  --color-amber: #D4860A;
+  --color-amber-light: #F5C842;
+  --color-border: rgba(13, 13, 13, 0.12);
+  --color-border-dark: rgba(13, 13, 13, 0.24);
+  
+  /* Semantic */
+  --color-bg: #FAF8F2;
+  --color-surface: #FFFFFF;
+  --color-text: #0D0D0D;
+  --color-text-muted: #707060;
+  --color-accent: #7A9E7E;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  line-height: 1.6;
+}
+
+/* Typography scale */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+/* Smooth transitions globally */
+a, button {
+  transition: all 0.18s ease;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-dark);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
+/* Selection */
+::selection {
+  background: var(--color-sage-light);
+  color: var(--color-ink);
+}
+
+/* ─── Utility classes ─────────────────────────────── */
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 
+           bg-ink-900 text-cream-100 font-body font-medium text-sm
+           rounded-full border border-ink-900
+           hover:bg-ink-800 hover:shadow-lg hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-none
+           transition-all duration-200;
+  }
+
+  .btn-secondary {
+        @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 
+          bg-transparent text-ink-900 font-body font-medium text-sm
+          rounded-full border border-ink-900/20
+          hover:border-ink-900/60 hover:bg-ink-900/10
+          transition-all duration-200;
+  }
+
+  .btn-sage {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 
+           bg-sage text-white font-body font-medium text-sm
+           rounded-full border border-sage
+           hover:bg-sage-600 hover:shadow-md hover:-translate-y-0.5
+           active:translate-y-0
+           transition-all duration-200;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl border border-ink-900/10 shadow-sm;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 bg-white border border-ink-900/15 rounded-xl
+           font-body text-sm text-ink-900 placeholder:text-ink-300
+           focus:outline-none focus:border-sage focus:ring-2 focus:ring-sage/20
+           transition-all duration-200;
+  }
+
+  .label {
+    @apply block font-body text-xs font-medium text-ink-500 uppercase tracking-wider mb-1.5;
+  }
+
+  .nav-link {
+    @apply font-body text-sm text-ink-600 hover:text-ink-900 transition-colors duration-150;
+  }
+
+  /* Grain overlay */
+  .grain-overlay::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Calendar cells */
+  .cal-cell {
+    @apply relative bg-white border-r border-b border-ink-900/6 
+           hover:bg-cream-50 cursor-pointer transition-colors duration-100;
+  }
+
+  .cal-cell-today {
+    @apply bg-sage/6 hover:bg-sage/10;
+  }
+
+  .cal-cell-outside {
+    @apply bg-ink-50/40;
+  }
+
+  /* AI sidebar */
+  .ai-sidebar {
+    @apply bg-ink-900 text-cream-100 flex flex-col h-full;
+  }
+
+  /* Floating toolbar */
+  .floating-toolbar {
+    @apply fixed bottom-6 left-1/2 -translate-x-1/2 z-50
+           bg-ink-900 text-white rounded-full px-3 py-2 
+           flex items-center gap-1
+           shadow-2xl border border-white/10;
+  }
+
+  /* Calendar event pill */
+  .event-pill {
+    @apply text-xs px-1.5 py-0.5 rounded-md font-body font-medium truncate;
+  }
+  
+  .event-pill-school {
+    @apply bg-amber/15 text-amber-dark;
+  }
+  
+  .event-pill-assessment {
+    @apply bg-red-50 text-red-700;
+  }
+  
+  .event-pill-hw {
+    @apply bg-blue-50 text-blue-700;
+  }
+  
+  .event-pill-milestone {
+    @apply bg-purple-50 text-purple-700;
+  }
+  
+  .event-pill-lesson {
+    @apply bg-sage/15 text-sage-700;
+  }
+}
+
+/* ─── Animation delays ────────────────────────────── */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+.delay-600 { animation-delay: 600ms; }
+
+/* ─── TipTap editor styles ────────────────────────── */
+.tiptap-editor {
+  @apply text-sm text-ink-800 leading-relaxed min-h-[80px] focus:outline-none;
+}
+.tiptap-editor p { @apply mb-1; }
+.tiptap-editor strong { @apply font-semibold; }
+.tiptap-editor ul { @apply list-disc pl-4 mb-1; }
+.tiptap-editor ol { @apply list-decimal pl-4 mb-1; }
+
+/* ─── Page transition ─────────────────────────────── */
+.page-enter {
+  animation: fadeUp 0.4s ease forwards;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
