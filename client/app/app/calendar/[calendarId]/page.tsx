@@ -40,15 +40,15 @@ function stripMarkdown(text: string): string {
 type ViewMode = 'month' | 'week'
 
 // Priority tiers for AI context when deciding what to move/keep/delete
-export type PriorityTier = 1 | 2 | 3 | 4 | 5
-export const PRIORITY_LABELS: Record<PriorityTier, string> = {
+type PriorityTier = 1 | 2 | 3 | 4 | 5
+const PRIORITY_LABELS: Record<PriorityTier, string> = {
   1: 'Critical',   // Finals, state exams, major projects
   2: 'High',       // Unit tests, essays, major assessments
   3: 'Medium',     // Quizzes, milestones, chapter reviews
   4: 'Standard',   // Regular lessons, classwork
   5: 'Low',        // Homework, notes, warm-ups
 }
-export const PRIORITY_COLORS: Record<PriorityTier, string> = {
+const PRIORITY_COLORS: Record<PriorityTier, string> = {
   1: 'text-red-700 bg-red-50 border-red-200',
   2: 'text-orange-700 bg-orange-50 border-orange-200',
   3: 'text-amber-700 bg-amber-50 border-amber-200',
@@ -56,7 +56,7 @@ export const PRIORITY_COLORS: Record<PriorityTier, string> = {
   5: 'text-ink-500 bg-ink-50 border-ink-200',
 }
 // Default priority by content type
-export const DEFAULT_PRIORITY: Record<string, PriorityTier> = {
+const DEFAULT_PRIORITY: Record<string, PriorityTier> = {
   assessments: 2,
   deadlines: 2,
   milestones: 3,
