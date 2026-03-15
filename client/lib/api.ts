@@ -42,7 +42,7 @@ export const api = {
   // ─── User Profile (periods & schedule settings) ────────
   profile: {
     get: () => request<UserProfile>('/api/auth/profile'),
-    update: (data: Partial<Pick<UserProfile, 'fullName' | 'schoolName' | 'schoolDayStart' | 'schoolDayEnd' | 'periods'>>) =>
+    update: (data: Partial<Pick<UserProfile, 'fullName' | 'schoolName' | 'schoolDayStart' | 'schoolDayEnd' | 'periods' | 'specialDays'>>) =>
       request<UserProfile>('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
   },
 
@@ -96,10 +96,19 @@ export interface PeriodConfig {
   endTime: string     // HH:MM  e.g. "09:42" (can be derived or set manually)
 }
 
+export interface SpecialDaySchedule {
+  id: string
+  name: string
+  dayStart: string
+  dayEnd: string
+  periods: PeriodConfig[]
+}
+
 export interface UserProfile extends User {
   schoolDayStart: string   // HH:MM
   schoolDayEnd: string     // HH:MM
   periods: PeriodConfig[]
+  specialDays?: SpecialDaySchedule[]
 }
 
 export interface Course {

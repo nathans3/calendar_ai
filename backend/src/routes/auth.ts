@@ -189,6 +189,16 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       return res.status(404).json({ message: 'User not found.' })
     }
     const user = result.rows[0]
+    // Decode periods — may be plain array (v1) or wrapper object { _v:2, regular, special }
+    let regularPeriods: any[] = []
+    let specialDays: any[] = []
+    const rawPeriods = user.periods
+    if (Array.isArray(rawPeriods)) {
+      regularPeriods = rawPeriods
+    } else if (rawPeriods && rawPeriods._v === 2) {
+      regularPeriods = rawPeriods.regular || []
+      specialDays    = rawPeriods.special  || []
+    }
     res.json({
       id: user.id,
       email: user.email,
@@ -197,7 +207,8 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       plan: user.plan,
       schoolDayStart: user.school_day_start || '08:00',
       schoolDayEnd: user.school_day_end || '15:00',
-      periods: user.periods || [],
+      periods: regularPeriods,
+      specialDays,
     })
   } catch (err) {
     console.error('Profile get error:', err)
@@ -209,11 +220,24 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
 // Updates user profile settings including periods
 router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { fullName, schoolName, schoolDayStart, schoolDayEnd, periods } = req.body
+    const { fullName, schoolName, schoolDayStart, schoolDayEnd, periods, specialDays } = req.body
 
     // Validate periods array structure
     if (periods !== undefined && !Array.isArray(periods)) {
       return res.status(400).json({ message: 'periods must be an array.' })
+    }
+
+    // Encode periods + specialDays into a single JSONB column as versioned wrapper
+    let periodsPayload: any = null
+    if (periods !== undefined || specialDays !== undefined) {
+      // Fetch current value to merge
+      const cur = await db.query(`SELECT periods FROM users WHERE id=$1`, [req.userId])
+      const raw = cur.rows[0]?.periods
+      let curRegular = Array.isArray(raw) ? raw : (raw?._v === 2 ? raw.regular || [] : [])
+      let curSpecial = Array.isArray(raw) ? [] : (raw?._v === 2 ? raw.special || [] : [])
+      const newRegular = periods   !== undefined ? periods    : curRegular
+      const newSpecial = specialDays !== undefined ? specialDays : curSpecial
+      periodsPayload = JSON.stringify({ _v: 2, regular: newRegular, special: newSpecial })
     }
 
     const result = await db.query(
@@ -232,7 +256,7 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
         schoolName || null,
         schoolDayStart || null,
         schoolDayEnd   || null,
-        periods !== undefined ? JSON.stringify(periods) : null,
+        periodsPayload,
       ]
     )
 
@@ -240,6 +264,16 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       return res.status(404).json({ message: 'User not found.' })
     }
     const user = result.rows[0]
+    // Decode stored periods wrapper
+    const rawPeriods2 = user.periods
+    let retRegular = []
+    let retSpecial: any[] = []
+    if (Array.isArray(rawPeriods2)) {
+      retRegular = rawPeriods2
+    } else if (rawPeriods2 && rawPeriods2._v === 2) {
+      retRegular = rawPeriods2.regular || []
+      retSpecial = rawPeriods2.special  || []
+    }
     res.json({
       id: user.id,
       email: user.email,
@@ -248,7 +282,8 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       plan: user.plan,
       schoolDayStart: user.school_day_start || '08:00',
       schoolDayEnd: user.school_day_end || '15:00',
-      periods: user.periods || [],
+      periods: retRegular,
+      specialDays: retSpecial,
     })
   } catch (err) {
     console.error('Profile update error:', err)

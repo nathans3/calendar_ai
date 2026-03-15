@@ -333,6 +333,10 @@ function TopNav({ calendarName, period, currentDate, view, onViewChange, onToday
         <Link href="/app/schedule" className="font-body text-xs font-medium text-ink-700 px-3 py-1.5 rounded-lg border border-ink-900/12 hover:border-ink-900/30 transition-all flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5" />My Schedule
         </Link>
+        <button onClick={onAiToggle}
+          className={`flex items-center gap-1.5 font-body text-xs font-semibold px-3 py-1.5 rounded-lg border-2 transition-all duration-200 ${aiOpen ? 'bg-sage border-sage text-white shadow-md' : 'border-ink-900/20 text-ink-700 hover:border-sage/60 bg-white'}`}>
+          <Sparkles className="w-3.5 h-3.5" />AI
+        </button>
       </div>
     </div>
   )
@@ -1732,8 +1736,7 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
                 onRescheduleRequest={handleRescheduleRequest}
                 onDragMove={handleDragMove} />}
         </div>
-        {/* Sidebar toggle handle — hover the border to reveal, click to open/close */}
-        <SidebarHandle aiOpen={aiOpen} onToggle={() => setAiOpen(v => !v)} />
+        {/* Sidebar toggle — now handled by AI button in TopNav */}
         {aiOpen && (
           <AISidebar
             selectedDate={selectedDate}

@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Calendar, ArrowLeft, Loader2, Plus, Trash2, Clock,
-  Check, School, User, LogOut, ChevronDown, AlertCircle
+  Check, School, User, LogOut, AlertCircle, Upload, ChevronRight
 } from 'lucide-react'
 import { api, clearSession, PeriodConfig, UserProfile } from '../../../lib/api'
 import { useAuth } from '../../../lib/useAuth'
@@ -18,6 +18,128 @@ function fmt12(t: string) {
   return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
 }
 
+// ─── Reusable Period Editor ────────────────────────────────
+function PeriodEditor({
+  periods, setPeriods, defaultStart = '08:00',
+}: {
+  periods: PeriodConfig[]
+  setPeriods: (p: PeriodConfig[]) => void
+  defaultStart?: string
+}) {
+  const toHHMM = (mins: number) => {
+    const hh = Math.floor(mins / 60) % 24
+    const mm = mins % 60
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  }
+
+  const addPeriod = () => {
+    const id = `p${Date.now()}`
+    const lastEnd = periods.length > 0 ? periods[periods.length - 1].endTime : defaultStart
+    const [h, m] = lastEnd.split(':').map(Number)
+    const startMins = h * 60 + m
+    const endMins   = startMins + 45
+    setPeriods([...periods, { id, label: `Period ${periods.length + 1}`, durationMinutes: 45, startTime: toHHMM(startMins), endTime: toHHMM(endMins) }])
+  }
+
+  const updatePeriod = (id: string, field: keyof PeriodConfig, value: string | number) => {
+    setPeriods(periods.map(p => {
+      if (p.id !== id) return p
+      const updated = { ...p, [field]: value }
+      if (field === 'startTime' || field === 'durationMinutes') {
+        const [h, m] = (field === 'startTime' ? String(value) : updated.startTime).split(':').map(Number)
+        const dur = field === 'durationMinutes' ? Number(value) : updated.durationMinutes
+        updated.endTime = toHHMM(h * 60 + m + dur)
+      }
+      return updated
+    }))
+  }
+
+  const removePeriod = (id: string) => setPeriods(periods.filter(p => p.id !== id))
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="font-body text-xs font-semibold text-ink-500 uppercase tracking-wide">Periods</p>
+        <button onClick={addPeriod} className="flex items-center gap-1.5 font-body text-xs text-sage hover:text-sage-700 transition-colors">
+          <Plus className="w-3.5 h-3.5" />Add period
+        </button>
+      </div>
+      {periods.length === 0 ? (
+        <div className="text-center py-5 border-2 border-dashed border-ink-900/10 rounded-xl">
+          <p className="font-body text-sm text-ink-400 mb-1">No periods yet</p>
+          <button onClick={addPeriod} className="mt-1 font-body text-xs text-sage hover:underline">+ Add first period</button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {periods.map((p, idx) => (
+            <div key={p.id} className="bg-ink-50/60 border border-ink-900/8 rounded-xl p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="font-body text-[10px] text-ink-400 font-semibold w-4">{idx + 1}</span>
+                <input type="text" value={p.label} onChange={e => updatePeriod(p.id, 'label', e.target.value)}
+                  placeholder="e.g. Period 3" className="flex-1 input-field text-sm py-1.5 font-medium" />
+                <button onClick={() => removePeriod(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 pl-6">
+                <div className="flex items-center gap-1.5 flex-1">
+                  <Clock className="w-3.5 h-3.5 text-ink-400 flex-shrink-0" />
+                  <input type="time" value={p.startTime} onChange={e => updatePeriod(p.id, 'startTime', e.target.value)} className="input-field text-xs py-1.5 flex-1 min-w-0" />
+                  <span className="font-body text-xs text-ink-400">–</span>
+                  <input type="time" value={p.endTime} onChange={e => updatePeriod(p.id, 'endTime', e.target.value)} className="input-field text-xs py-1.5 flex-1 min-w-0" />
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <input type="number" min={1} max={240} value={p.durationMinutes}
+                    onChange={e => updatePeriod(p.id, 'durationMinutes', parseInt(e.target.value) || 45)}
+                    className="input-field text-xs py-1.5 w-16 text-center" />
+                  <span className="font-body text-[10px] text-ink-400">min</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {periods.length > 0 && (
+        <div className="bg-sage/5 border border-sage/15 rounded-xl px-4 py-3">
+          <p className="font-body text-xs font-semibold text-sage-700 mb-1.5">Preview</p>
+          <div className="space-y-1">
+            {periods.map(p => (
+              <div key={p.id} className="flex items-center justify-between">
+                <span className="font-body text-xs text-ink-700">{p.label}</span>
+                <span className="font-mono text-xs text-ink-400">{fmt12(p.startTime)} – {fmt12(p.endTime)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Collapsible section ───────────────────────────────────
+function CollapsibleSection({ title, subtitle, children }: {
+  title: string; subtitle?: string; children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="border border-ink-900/8 rounded-xl overflow-hidden">
+      <button onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-ink-50/50 transition-colors text-left">
+        <div>
+          <span className="font-body text-sm font-semibold text-ink-800">{title}</span>
+          {subtitle && <span className="font-body text-xs text-ink-400 ml-2">{subtitle}</span>}
+        </div>
+        <ChevronRight className={`w-4 h-4 text-ink-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+      </button>
+      {open && <div className="px-4 py-4 bg-white border-t border-ink-900/6">{children}</div>}
+    </div>
+  )
+}
+
+interface SpecialDaySchedule {
+  id: string; name: string; dayStart: string; dayEnd: string; periods: PeriodConfig[]
+}
+
 export default function ProfilePage() {
   const router = useRouter()
   const { user, loading: authLoading } = useAuth(true)
@@ -28,12 +150,22 @@ export default function ProfilePage() {
   const [saved,          setSaved]          = useState(false)
   const [error,          setError]          = useState('')
 
-  // Editable fields
+  // Account
   const [fullName,       setFullName]       = useState('')
   const [schoolName,     setSchoolName]     = useState('')
+
+  // Regular schedule
   const [schoolDayStart, setSchoolDayStart] = useState('08:00')
   const [schoolDayEnd,   setSchoolDayEnd]   = useState('15:00')
   const [periods,        setPeriods]        = useState<PeriodConfig[]>([])
+
+  // Special day schedules
+  const [specialDays, setSpecialDays] = useState<SpecialDaySchedule[]>([])
+
+  // Upload
+  const [uploading, setUploading]     = useState(false)
+  const [uploadMsg, setUploadMsg]     = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!user) return
@@ -45,52 +177,63 @@ export default function ProfilePage() {
         setSchoolDayStart(p.schoolDayStart || '08:00')
         setSchoolDayEnd(p.schoolDayEnd || '15:00')
         setPeriods(p.periods || [])
+        const ext = (p as any).specialDays
+        if (ext && Array.isArray(ext)) setSpecialDays(ext)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [user])
 
-  const addPeriod = () => {
-    const id = `p${Date.now()}`
-    const lastEnd = periods.length > 0 ? periods[periods.length - 1].endTime : schoolDayStart
-    const [h, m] = lastEnd.split(':').map(Number)
-    const startMins = h * 60 + m
-    const endMins   = startMins + 45
-    const toHHMM = (mins: number) => {
-      const hh = Math.floor(mins / 60) % 24
-      const mm = mins % 60
-      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
-    }
-    setPeriods(prev => [...prev, {
-      id,
-      label: `Period ${prev.length + 1}`,
-      durationMinutes: 45,
-      startTime: toHHMM(startMins),
-      endTime:   toHHMM(endMins),
+  const addSpecialDay = (preset?: Partial<SpecialDaySchedule>) => {
+    setSpecialDays(prev => [...prev, {
+      id: `sd${Date.now()}`,
+      name: preset?.name || 'Special Day',
+      dayStart: preset?.dayStart || schoolDayStart,
+      dayEnd:   preset?.dayEnd   || schoolDayEnd,
+      periods:  preset?.periods  || [],
     }])
   }
 
-  const updatePeriod = (id: string, field: keyof PeriodConfig, value: string | number) => {
-    setPeriods(prev => prev.map(p => {
-      if (p.id !== id) return p
-      const updated = { ...p, [field]: value }
-      if (field === 'startTime' || field === 'durationMinutes') {
-        const [h, m] = (field === 'startTime' ? String(value) : updated.startTime).split(':').map(Number)
-        const dur = field === 'durationMinutes' ? Number(value) : updated.durationMinutes
-        const endMins = h * 60 + m + dur
-        updated.endTime = `${String(Math.floor(endMins / 60) % 24).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`
+  // Parse a plain text schedule file into PeriodConfig[]
+  const handleFileUpload = async (file: File) => {
+    setUploading(true)
+    setUploadMsg('')
+    try {
+      const text = await file.text()
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+      const parsed: PeriodConfig[] = []
+      const timeRe  = /(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/
+      const labelRe = /(?:period|class|block|hr|homeroom)[^\d]*\d+[\w/]*|[A-Z][^0-9\n:]{2,20}/i
+      for (const line of lines) {
+        const timeMatch = timeRe.exec(line)
+        if (!timeMatch) continue
+        const labelMatch = labelRe.exec(line)
+        const startTime = timeMatch[1].length === 4 ? `0${timeMatch[1]}` : timeMatch[1]
+        const endTime   = timeMatch[2].length === 4 ? `0${timeMatch[2]}` : timeMatch[2]
+        const [sh, sm] = startTime.split(':').map(Number)
+        const [eh, em] = endTime.split(':').map(Number)
+        const durationMinutes = (eh * 60 + em) - (sh * 60 + sm)
+        const label = labelMatch ? labelMatch[0].trim() : `Period ${parsed.length + 1}`
+        parsed.push({ id: `pu${Date.now()}-${parsed.length}`, label, startTime, endTime, durationMinutes })
       }
-      return updated
-    }))
+      if (parsed.length === 0) {
+        setUploadMsg('Could not detect periods. Expected format: "Period 1  8:00 – 8:45"')
+      } else {
+        setPeriods(parsed)
+        setUploadMsg(`✓ Loaded ${parsed.length} period${parsed.length !== 1 ? 's' : ''} from file`)
+      }
+    } catch { setUploadMsg('Error reading file') }
+    setUploading(false)
   }
-
-  const removePeriod = (id: string) => setPeriods(prev => prev.filter(p => p.id !== id))
 
   const handleSave = async () => {
     setSaving(true)
     setError('')
     try {
-      await api.profile.update({ fullName, schoolName, schoolDayStart, schoolDayEnd, periods })
+      await api.profile.update({
+        fullName, schoolName, schoolDayStart, schoolDayEnd, periods,
+        ...(specialDays.length > 0 ? { specialDays } as any : {}),
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (e: any) {
@@ -116,14 +259,11 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-cream-100">
-      {/* Nav */}
       <nav className="bg-cream-100/90 border-b border-ink-900/8 backdrop-blur-md sticky top-0 z-20">
         <div className="max-w-2xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link href="/app" className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors">
-              <ArrowLeft className="w-4 h-4" />Dashboard
-            </Link>
-          </div>
+          <Link href="/app" className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors">
+            <ArrowLeft className="w-4 h-4" />Dashboard
+          </Link>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-ink-900 rounded-lg flex items-center justify-center">
               <Calendar className="w-3.5 h-3.5 text-cream-100" />
@@ -139,7 +279,7 @@ export default function ProfilePage() {
       <main className="max-w-2xl mx-auto px-6 py-10 space-y-6 page-enter">
         <div>
           <h1 className="font-display text-4xl text-ink-900 mb-1">Profile</h1>
-          <p className="font-body text-sm text-ink-400">Manage your account and school schedule</p>
+          <p className="font-body text-sm text-ink-400">Manage your account and school schedules</p>
         </div>
 
         {/* ── Account Info ── */}
@@ -151,164 +291,156 @@ export default function ProfilePage() {
           <div className="px-6 py-5 space-y-4">
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Full Name</label>
-              <input
-                type="text"
-                value={fullName}
-                onChange={e => setFullName(e.target.value)}
-                placeholder="Your name"
-                className="input-field w-full"
-              />
+              <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+                placeholder="Your name" className="input-field w-full" />
             </div>
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">School Name</label>
-              <input
-                type="text"
-                value={schoolName}
-                onChange={e => setSchoolName(e.target.value)}
-                placeholder="e.g. Lincoln High School"
-                className="input-field w-full"
-              />
+              <input type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)}
+                placeholder="e.g. Lincoln High School" className="input-field w-full" />
             </div>
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Email</label>
-              <input
-                type="email"
-                value={profile?.email || ''}
-                disabled
-                className="input-field w-full opacity-50 cursor-not-allowed"
-              />
+              <input type="email" value={profile?.email || ''} disabled
+                className="input-field w-full opacity-50 cursor-not-allowed" />
             </div>
           </div>
         </div>
 
-        {/* ── Bell Schedule ── */}
+        {/* ── Regular Bell Schedule ── */}
         <div className="card overflow-hidden">
-          <div className="flex items-center gap-2 px-6 py-4 border-b border-ink-900/8">
-            <School className="w-4 h-4 text-ink-400" />
-            <h2 className="font-body font-semibold text-sm text-ink-900">Bell Schedule</h2>
-            {periods.length > 0 && (
-              <span className="font-body text-xs text-ink-400 bg-ink-900/6 px-2 py-0.5 rounded-full">
-                {periods.length} period{periods.length !== 1 ? 's' : ''}
-              </span>
-            )}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-ink-900/8">
+            <div className="flex items-center gap-2">
+              <School className="w-4 h-4 text-ink-400" />
+              <h2 className="font-body font-semibold text-sm text-ink-900">Regular Bell Schedule</h2>
+              {periods.length > 0 && (
+                <span className="font-body text-xs text-ink-400 bg-ink-900/6 px-2 py-0.5 rounded-full">
+                  {periods.length} period{periods.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <input ref={fileRef} type="file" accept=".txt,.csv" className="hidden"
+                onChange={e => { if (e.target.files?.[0]) handleFileUpload(e.target.files[0]); e.target.value = '' }} />
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="flex items-center gap-1.5 font-body text-xs text-ink-500 hover:text-sage border border-ink-900/12 hover:border-sage/40 px-2.5 py-1.5 rounded-lg transition-colors"
+                title="Upload a .txt or .csv schedule file">
+                {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                Upload
+              </button>
+            </div>
           </div>
 
+          {uploadMsg && (
+            <div className={`mx-6 mt-3 px-3 py-2 rounded-lg text-xs font-body ${uploadMsg.startsWith('✓') ? 'bg-sage/8 text-sage-700' : 'bg-red-50 text-red-600'}`}>
+              {uploadMsg}
+            </div>
+          )}
+
           <div className="px-6 py-5 space-y-5">
-            {/* School day hours */}
             <div>
               <p className="font-body text-xs font-semibold text-ink-500 uppercase tracking-wide mb-3">School Day Hours</p>
               <div className="flex items-center gap-4">
                 <div className="flex-1">
                   <label className="font-body text-xs text-ink-500 mb-1 block">Starts</label>
-                  <input
-                    type="time"
-                    value={schoolDayStart}
-                    onChange={e => setSchoolDayStart(e.target.value)}
-                    className="input-field text-sm py-2 w-full"
-                  />
+                  <input type="time" value={schoolDayStart} onChange={e => setSchoolDayStart(e.target.value)} className="input-field text-sm py-2 w-full" />
                 </div>
                 <div className="flex-1">
                   <label className="font-body text-xs text-ink-500 mb-1 block">Ends</label>
-                  <input
-                    type="time"
-                    value={schoolDayEnd}
-                    onChange={e => setSchoolDayEnd(e.target.value)}
-                    className="input-field text-sm py-2 w-full"
-                  />
+                  <input type="time" value={schoolDayEnd} onChange={e => setSchoolDayEnd(e.target.value)} className="input-field text-sm py-2 w-full" />
                 </div>
               </div>
             </div>
+            <PeriodEditor periods={periods} setPeriods={setPeriods} defaultStart={schoolDayStart} />
+          </div>
+        </div>
 
-            {/* Periods */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <p className="font-body text-xs font-semibold text-ink-500 uppercase tracking-wide">Periods</p>
-                <button onClick={addPeriod} className="flex items-center gap-1.5 font-body text-xs text-sage hover:text-sage-700 transition-colors">
-                  <Plus className="w-3.5 h-3.5" />Add period
-                </button>
-              </div>
+        {/* ── Special Day Schedules ── */}
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-ink-900/8">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-ink-400" />
+              <h2 className="font-body font-semibold text-sm text-ink-900">Special Day Schedules</h2>
+            </div>
+          </div>
+          <div className="px-6 py-5 space-y-4">
+            <p className="font-body text-xs text-ink-400">
+              Define alternate schedules for special days. When you tell the AI "today is a single session day", it will use the matching schedule here to adjust period times and lesson planning.
+            </p>
 
-              {periods.length === 0 ? (
-                <div className="text-center py-6 border-2 border-dashed border-ink-900/10 rounded-xl">
-                  <p className="font-body text-sm text-ink-400 mb-1">No periods yet</p>
-                  <p className="font-body text-xs text-ink-300">Add periods like "Period 7/8" with their start times</p>
-                  <button onClick={addPeriod} className="mt-3 btn-sage py-1.5 px-4 text-xs gap-1.5">
-                    <Plus className="w-3 h-3" />Add first period
+            {/* Quick-add preset buttons */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { name: 'Single Session', dayStart: schoolDayStart, dayEnd: '12:00' },
+                { name: 'Half Day (AM)',  dayStart: schoolDayStart, dayEnd: '12:00' },
+                { name: 'Half Day (PM)',  dayStart: '12:00',        dayEnd: schoolDayEnd },
+                { name: 'Late Arrival',  dayStart: '10:00',        dayEnd: schoolDayEnd },
+                { name: 'Early Dismissal', dayStart: schoolDayStart, dayEnd: '13:00' },
+              ]
+                .filter(p => !specialDays.find(s => s.name === p.name))
+                .map(preset => (
+                  <button key={preset.name} onClick={() => addSpecialDay(preset)}
+                    className="flex items-center gap-1.5 font-body text-xs text-sage border border-sage/30 hover:bg-sage/5 px-2.5 py-1.5 rounded-lg transition-colors">
+                    <Plus className="w-3 h-3" />{preset.name}
                   </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {periods.map((p, idx) => (
-                    <div key={p.id} className="bg-ink-50/60 border border-ink-900/8 rounded-xl p-3 space-y-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-body text-[10px] text-ink-400 font-semibold uppercase tracking-wide w-4">{idx + 1}</span>
-                        <input
-                          type="text"
-                          value={p.label}
-                          onChange={e => updatePeriod(p.id, 'label', e.target.value)}
-                          placeholder="e.g. Period 7/8"
-                          className="flex-1 input-field text-sm py-1.5 font-medium"
-                        />
-                        <button
-                          onClick={() => removePeriod(p.id)}
-                          className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                ))}
+              <button onClick={() => addSpecialDay()}
+                className="flex items-center gap-1.5 font-body text-xs text-ink-500 border border-ink-900/12 hover:border-ink-900/30 px-2.5 py-1.5 rounded-lg transition-colors">
+                <Plus className="w-3 h-3" />Custom
+              </button>
+            </div>
+
+            {specialDays.length > 0 && (
+              <div className="space-y-2">
+                {specialDays.map(sd => (
+                  <CollapsibleSection key={sd.id} title={sd.name} subtitle={`${fmt12(sd.dayStart)} – ${fmt12(sd.dayEnd)}`}>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="font-body text-xs text-ink-500 mb-1 block">Name</label>
+                          <input type="text" value={sd.name}
+                            onChange={e => setSpecialDays(prev => prev.map(s => s.id === sd.id ? { ...s, name: e.target.value } : s))}
+                            className="input-field text-sm py-1.5 w-full" />
+                        </div>
+                        <button onClick={() => setSpecialDays(prev => prev.filter(s => s.id !== sd.id))}
+                          className="mt-5 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
+                          <Trash2 className="w-4 h-4 text-red-400" />
                         </button>
                       </div>
-                      <div className="flex items-center gap-2 pl-6">
-                        <div className="flex items-center gap-1.5 flex-1">
-                          <Clock className="w-3.5 h-3.5 text-ink-400 flex-shrink-0" />
-                          <input
-                            type="time"
-                            value={p.startTime}
-                            onChange={e => updatePeriod(p.id, 'startTime', e.target.value)}
-                            className="input-field text-xs py-1.5 flex-1 min-w-0"
-                          />
-                          <span className="font-body text-xs text-ink-400">–</span>
-                          <input
-                            type="time"
-                            value={p.endTime}
-                            onChange={e => updatePeriod(p.id, 'endTime', e.target.value)}
-                            className="input-field text-xs py-1.5 flex-1 min-w-0"
-                          />
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <label className="font-body text-xs text-ink-500 mb-1 block">Day starts</label>
+                          <input type="time" value={sd.dayStart}
+                            onChange={e => setSpecialDays(prev => prev.map(s => s.id === sd.id ? { ...s, dayStart: e.target.value } : s))}
+                            className="input-field text-sm py-1.5 w-full" />
                         </div>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <input
-                            type="number"
-                            min={1}
-                            max={240}
-                            value={p.durationMinutes}
-                            onChange={e => updatePeriod(p.id, 'durationMinutes', parseInt(e.target.value) || 45)}
-                            className="input-field text-xs py-1.5 w-16 text-center"
-                          />
-                          <span className="font-body text-[10px] text-ink-400">min</span>
+                        <div className="flex-1">
+                          <label className="font-body text-xs text-ink-500 mb-1 block">Day ends</label>
+                          <input type="time" value={sd.dayEnd}
+                            onChange={e => setSpecialDays(prev => prev.map(s => s.id === sd.id ? { ...s, dayEnd: e.target.value } : s))}
+                            className="input-field text-sm py-1.5 w-full" />
                         </div>
                       </div>
+                      <div>
+                        <p className="font-body text-xs font-semibold text-ink-500 uppercase tracking-wide mb-2">Periods for this day type</p>
+                        <PeriodEditor
+                          periods={sd.periods}
+                          setPeriods={p => setSpecialDays(prev => prev.map(s => s.id === sd.id ? { ...s, periods: p } : s))}
+                          defaultStart={sd.dayStart}
+                        />
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Schedule preview */}
-            {periods.length > 0 && (
-              <div className="bg-sage/5 border border-sage/15 rounded-xl px-4 py-3">
-                <p className="font-body text-xs font-semibold text-sage-700 mb-2">Preview</p>
-                <div className="space-y-1">
-                  {periods.map(p => (
-                    <div key={p.id} className="flex items-center justify-between">
-                      <span className="font-body text-xs text-ink-700">{p.label}</span>
-                      <span className="font-mono text-xs text-ink-400">{fmt12(p.startTime)} – {fmt12(p.endTime)}</span>
-                    </div>
-                  ))}
-                </div>
+                  </CollapsibleSection>
+                ))}
               </div>
+            )}
+
+            {specialDays.length === 0 && (
+              <p className="font-body text-xs text-ink-300 text-center py-2">No special day schedules yet. Add one above.</p>
             )}
           </div>
         </div>
 
-        {/* Save */}
         {error && (
           <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-100 rounded-xl px-4 py-3">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -317,18 +449,8 @@ export default function ProfilePage() {
         )}
 
         <div className="flex justify-end pb-10">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-sage gap-2 min-w-[120px] justify-center"
-          >
-            {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : saved ? (
-              <><Check className="w-4 h-4" />Saved!</>
-            ) : (
-              'Save changes'
-            )}
+          <button onClick={handleSave} disabled={saving} className="btn-sage gap-2 min-w-[120px] justify-center">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <><Check className="w-4 h-4" />Saved!</> : 'Save changes'}
           </button>
         </div>
       </main>

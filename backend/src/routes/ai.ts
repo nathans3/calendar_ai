@@ -129,6 +129,7 @@ const AI_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           description: { type: 'string',  description: 'Optional notes' },
           color:       { type: 'string',  enum: ['blue', 'sage', 'amber', 'purple', 'red'], description: 'Event color' },
           schoolWide:  { type: 'boolean', description: 'True if this is a school-wide event' },
+          repeatRule:  { type: 'string',  enum: ['none', 'daily', 'weekly', 'monthly'], description: 'Recurrence rule — use weekly for events that repeat every week, daily for daily, monthly for monthly. Defaults to none.' },
         },
         required: ['title', 'date'],
       },
@@ -640,7 +641,7 @@ Rules:
             const {
               title, date, startTime, endTime,
               allDay = false, schoolWide = false,
-              location = '', description = '', color = 'blue',
+              location = '', description = '', color = 'blue', repeatRule = 'none',
             } = args
             if (title && date) {
               try {
@@ -651,11 +652,12 @@ Rules:
                      TO_CHAR(start_time,'HH24:MI') AS "startTime",
                      TO_CHAR(end_time,'HH24:MI') AS "endTime",
                      all_day AS "allDay", school_wide AS "schoolWide",
+                     repeat_rule AS "repeatRule",
                      location, description, color`,
                   [req.userId, title, date,
                    allDay ? null : startTime || null,
                    allDay ? null : endTime || null,
-                   allDay, schoolWide, 'none', location, description, color]
+                   allDay, schoolWide, repeatRule || 'none', location, description, color]
                 )
                 createdEvents.push(result.rows[0])
               } catch (dbErr: any) {

@@ -6,14 +6,14 @@ import {
   Calendar, ChevronLeft, ChevronRight, Home, Plus, X,
   Clock, MapPin, AlignLeft, Repeat, ArrowLeft, ArrowRight, Loader2,
   Sparkles, CalendarDays, CheckCheck, RotateCcw,
-  PanelRightClose, PanelRightOpen, Check
+  Check
 } from 'lucide-react'
 import {
   format, startOfWeek, addDays, isToday, addWeeks, subWeeks,
   startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth,
   addMonths, subMonths, endOfWeek
 } from 'date-fns'
-import { api, apiExtended, CalEvent, LessonData, ApiError } from '../../../lib/api'
+import { api, apiExtended, CalEvent, LessonData, ApiError, UserProfile, PeriodConfig } from '../../../lib/api'
 import { useAuth } from '../../../lib/useAuth'
 
 type CalView = 'month' | 'week'
@@ -25,6 +25,8 @@ interface LocalEvent {
   location?: string; description?: string
   isClosedDay?: boolean // synthetic closed-day event from lesson notes
   repeatRule?: string
+  isPeriodBlock?: boolean // read-only period from bell schedule
+  calendarId?: string    // for period blocks: the course calendar id
 }
 
 const HOURS = Array.from({ length: 16 }, (_, i) => i + 6)
@@ -431,9 +433,9 @@ function Nav({ calView, currentDate, onViewChange, onToday, onPrev, onNext, onNe
       </div>
       <div className="flex items-center gap-2">
         <button onClick={onNewEvent} className="btn-sage py-2 px-3.5 text-xs gap-1.5"><Plus className="w-3.5 h-3.5" />New Event</button>
-        <button onClick={onAiToggle} title={aiOpen ? 'Close AI' : 'Open AI'}
-          className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${aiOpen ? 'bg-sage border-sage text-white shadow-md' : 'bg-white border-ink-900/20 text-ink-600 hover:border-sage/60'}`}>
-          {aiOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+        <button onClick={onAiToggle}
+          className={`flex items-center gap-1.5 font-body text-xs font-semibold px-3 py-1.5 rounded-lg border-2 transition-all duration-200 ${aiOpen ? 'bg-sage border-sage text-white shadow-md' : 'border-ink-900/20 text-ink-700 hover:border-sage/60 bg-white'}`}>
+          <Sparkles className="w-3.5 h-3.5" />AI
         </button>
       </div>
     </div>
@@ -494,8 +496,8 @@ function FullMonthView({ currentDate, events, onDayClick, onEventClick, onDragMo
           const closedEvent = dayEvents.find(e => e.isClosedDay)
           // On closed days, hide period/class events (weekly sage repeating) but keep user events
           const isPeriodEvent = (e: LocalEvent) => e.color === 'sage' && e.repeatRule === 'weekly'
-          const allDayEvs   = dayEvents.filter(e => e.allDay && !e.isClosedDay)
-          const timedEvs    = dayEvents.filter(e => !e.allDay && !e.isClosedDay && !(isClosed && isPeriodEvent(e)))
+          const allDayEvs   = dayEvents.filter(e => e.allDay && !e.isClosedDay && !isPeriodEvent(e))
+          const timedEvs    = dayEvents.filter(e => !e.allDay && !e.isClosedDay && !isPeriodEvent(e))
           const displayEvs  = [...(closedEvent ? [closedEvent] : []), ...allDayEvs, ...timedEvs]
           return (
             <div key={ds}
@@ -590,8 +592,8 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* All-day row */}
-      <div className="grid grid-cols-8 border-b border-ink-900/8 bg-white flex-shrink-0">
-        <div className="py-2 px-2 border-r border-ink-900/6 flex items-end pb-1"><span className="font-mono text-[10px] text-ink-300">All day</span></div>
+      <div className="border-b border-ink-900/8 bg-white flex-shrink-0" style={{ display: 'grid', gridTemplateColumns: '40px repeat(7, 1fr)' }}>
+        <div className="py-2 px-1 border-r border-ink-900/6 flex items-end pb-1"><span className="font-mono text-[9px] text-ink-300 leading-tight">all<br/>day</span></div>
         {days.map(day => {
           const ds = format(day, 'yyyy-MM-dd')
           const isClosed    = closedDates.has(ds)
@@ -602,7 +604,7 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
               onDragOver={e => onColumnDragOver(e, ds)}
               onDrop={e => onCellDrop(e, ds)}
               onDragLeave={() => { setDragOverDs(null) }}
-              className={`p-1.5 border-r border-ink-900/6 last:border-r-0 min-h-[48px] transition-all
+              className={`p-1.5 border-r border-ink-900/6 last:border-r-0 min-h-[48px] max-h-24 overflow-y-auto transition-all
                 ${isClosed ? 'bg-blue-50/40' : ''}
                 ${dragOverDs === ds ? 'bg-sage/8 ring-1 ring-inset ring-sage/40' : ''}`}>
               <div className="flex items-center gap-1 mb-1">
@@ -632,11 +634,11 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
       </div>
       {/* Timed grid */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto relative">
-        <div className="grid grid-cols-8">
+        <div style={{ display: 'grid', gridTemplateColumns: '40px repeat(7, 1fr)' }}>
           <div className="border-r border-ink-900/6">
             {HOURS.map(h => (
-              <div key={h} className="h-[60px] flex items-start px-2 pt-1 border-b border-ink-900/4">
-                <span className="font-mono text-[10px] text-ink-300">{h === 12 ? '12pm' : h > 12 ? `${h-12}pm` : `${h}am`}</span>
+              <div key={h} className="h-[60px] flex items-start justify-center pt-1 border-b border-ink-900/4">
+                <span className="font-mono text-[9px] text-ink-300">{h === 12 ? '12p' : h > 12 ? `${h-12}p` : `${h}a`}</span>
               </div>
             ))}
           </div>
@@ -673,13 +675,16 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
                   const top    = timeToTop(ev.startTime)
                   const height = Math.max(dur(ev.startTime, ev.endTime), 25)
                   const isDragging = draggingId === ev.id
+                  const isPeriod   = ev.isPeriodBlock
                   return (
                     <div key={ev.id}
-                      draggable
-                      onDragStart={e => onEvDragStart(e, ev)}
+                      draggable={!isPeriod}
+                      onDragStart={e => { if (!isPeriod) onEvDragStart(e, ev) }}
                       onDragEnd={onDragEnd}
                       onClick={() => onEventClick(ev)}
-                      className={`absolute left-0.5 right-0.5 rounded-lg px-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing hover:brightness-95 z-10 transition-opacity
+                      title={isPeriod ? ev.title : undefined}
+                      className={`absolute left-0.5 right-0.5 rounded-lg px-1.5 py-1 overflow-hidden z-10 transition-opacity
+                        ${isPeriod ? 'cursor-default opacity-70 pointer-events-none' : 'cursor-grab active:cursor-grabbing hover:brightness-95'}
                         ${isDragging ? 'opacity-30' : ''}
                         ${ev.color === 'sage'   ? 'bg-sage/20 border-l-2 border-sage'         : ''}
                         ${ev.color === 'blue'   ? 'bg-blue-50 border-l-2 border-blue-400'     : ''}
@@ -687,7 +692,7 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
                         ${ev.color === 'amber'  ? 'bg-amber/15 border-l-2 border-amber'        : ''}`}
                       style={{ top: `${top}px`, height: `${height}px` }}>
                       <p className="font-body text-[10px] font-semibold text-ink-900 truncate">{ev.title}</p>
-                      {height > 35 && <p className="font-mono text-[9px] text-ink-500">{ev.startTime} – {ev.endTime}</p>}
+                      {height > 35 && <p className="font-mono text-[9px] text-ink-500">{formatTime(ev.startTime)} – {formatTime(ev.endTime)}</p>}
                     </div>
                   )
                 })}
@@ -708,6 +713,7 @@ export default function SchedulePage() {
   const [calView, setCalView]         = useState<CalView>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [events, setEvents]           = useState<LocalEvent[]>([])
+  const [periodBlocks, setPeriodBlocks] = useState<LocalEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(true)
   const [createModal, setCreateModal] = useState<{ date: string; hour: number } | null>(null)
   const [viewEvent, setViewEvent]     = useState<LocalEvent | null>(null)
@@ -721,6 +727,44 @@ export default function SchedulePage() {
     events.forEach(e => { if (e.isClosedDay) s.add(e.date) })
     return s
   }, [events])
+
+  // Load bell-schedule periods from profile and generate period blocks for the visible month
+  useEffect(() => {
+    if (!user || isDemo) return
+    api.profile.get()
+      .then(profile => {
+        const periods = profile.periods || []
+        if (periods.length === 0) return
+        // Generate a block for each weekday in ±2 months of current date
+        const monthStart = startOfMonth(currentDate)
+        const monthEnd   = endOfMonth(currentDate)
+        const blocks: LocalEvent[] = []
+        let day = monthStart
+        while (day <= monthEnd) {
+          const dow = day.getDay() // 0=Sun,6=Sat
+          if (dow >= 1 && dow <= 5) { // Mon–Fri only
+            const ds = format(day, 'yyyy-MM-dd')
+            periods.forEach(p => {
+              blocks.push({
+                id: `period__${ds}__${p.id}`,
+                title: p.label,
+                date: ds,
+                startTime: p.startTime,
+                endTime: p.endTime,
+                allDay: false,
+                schoolWide: false,
+                color: 'sage',
+                repeatRule: 'weekly',
+                isPeriodBlock: true,
+              })
+            })
+          }
+          day = addDays(day, 1)
+        }
+        setPeriodBlocks(blocks)
+      })
+      .catch(() => {})
+  }, [user, currentDate, isDemo])
 
   useEffect(() => {
     if (!user) return
@@ -799,7 +843,7 @@ export default function SchedulePage() {
 
   // Drag-and-drop move: update event date (and optionally hour) optimistically, then persist
   const handleDragMove = useCallback(async (eventId: string, toDate: string, toHour?: number) => {
-    if (eventId.startsWith('closed__') || eventId.startsWith('ai-marked__')) return
+    if (eventId.startsWith('closed__') || eventId.startsWith('ai-marked__') || eventId.startsWith('period__')) return
     const ev = events.find(e => e.id === eventId)
     if (!ev) return
 
@@ -868,10 +912,13 @@ export default function SchedulePage() {
             onEventClick={setViewEvent}
             onDragMove={handleDragMove} />
         ) : (
-          <FullWeekView currentDate={currentDate} events={events}
+          <FullWeekView currentDate={currentDate} events={[...events, ...periodBlocks]}
             closedDates={closedDates}
             onCellClick={(date, hour) => setCreateModal({ date, hour })}
-            onEventClick={setViewEvent}
+            onEventClick={ev => {
+              if (ev.isPeriodBlock) return // period blocks are read-only, no modal
+              setViewEvent(ev)
+            }}
             onDragMove={handleDragMove} />
         )}
         {aiOpen && <ScheduleAISidebar
