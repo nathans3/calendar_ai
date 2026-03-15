@@ -223,6 +223,8 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
     ai.requirementsText || ai.reqFile ||
     ai.additionalInfo
   )
+  const aiModeRequiresSchoolCal = ai.startDateMode === 'ai' && !(ai.schoolCalText.trim() || ai.schoolCalFile)
+  const canGenerate = hasAnyContent && !aiModeRequiresSchoolCal
 
   const handleCreateEmpty = async () => {
     setGenStatus({ phase: 'creating' })
@@ -236,7 +238,7 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
   }
 
   const handleCreateWithAI = async () => {
-    if (!hasAnyContent || isRunning) return
+    if (!canGenerate || isRunning) return
 
     // Step 1 — create the course record
     setGenStatus({ phase: 'creating' })
@@ -534,19 +536,25 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
                 {DOC_FIELDS.map(({ key, fileKey, label, placeholder }) => {
                   const hasFile = !!(ai[fileKey] as File | null)
                   const hasText = !!(ai[key] as string).trim()
+                  const isSchoolCal = key === 'schoolCalText'
+                  const isRequired = isSchoolCal && ai.startDateMode === 'ai'
+                  const isMissing  = isRequired && !hasFile && !hasText
                   return (
                     <div key={key} className="space-y-2">
                       <div className="flex items-center gap-2">
                         <FileText className="w-3.5 h-3.5 text-ink-400" />
                         <span className="font-body text-sm font-medium text-ink-700">{label}</span>
+                        {isRequired && (
+                          <span className="font-body text-[10px] bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-semibold">Required for “Let AI decide”</span>
+                        )}
                         <HelpTooltip fieldKey={key} />
                         {(hasFile || hasText) && <span className="font-body text-[10px] bg-sage/15 text-sage-700 px-2 py-0.5 rounded-full">&#x2713; Added</span>}
                       </div>
                       <textarea rows={2} placeholder={placeholder} value={ai[key] as string}
                         onChange={e => setAi(f => ({ ...f, [key]: e.target.value }))}
-                        className="input-field resize-none text-xs w-full" />
-                      <label className="flex items-center gap-2 px-3 py-2 bg-white border border-dashed border-ink-900/20 rounded-lg cursor-pointer hover:border-sage/60 group w-full">
-                        <Upload className="w-3.5 h-3.5 text-ink-400 group-hover:text-sage flex-shrink-0" />
+                        className={`input-field resize-none text-xs w-full ${isMissing ? 'border-red-300 ring-1 ring-red-200' : ''}`} />
+                      <label className={`flex items-center gap-2 px-3 py-2 bg-white border border-dashed rounded-lg cursor-pointer group w-full ${isMissing ? 'border-red-300 hover:border-red-400' : 'border-ink-900/20 hover:border-sage/60'}`}>
+                        <Upload className={`w-3.5 h-3.5 flex-shrink-0 ${isMissing ? 'text-red-400 group-hover:text-red-500' : 'text-ink-400 group-hover:text-sage'}`} />
                         <span className="font-body text-xs text-ink-400 group-hover:text-ink-600 truncate">
                           {hasFile ? `✓ ${(ai[fileKey] as File).name}` : 'Upload PDF, PNG, or JPG'}
                         </span>
@@ -575,8 +583,8 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
                   <button onClick={() => setStep(1)} className="btn-secondary">&larr; Back</button>
                   <div className="flex gap-3">
                     <button onClick={handleCreateEmpty} className="btn-secondary px-5 text-sm">Create Empty</button>
-                    <button onClick={handleCreateWithAI} disabled={!hasAnyContent}
-                      className={`btn-sage px-7 gap-2 ${!hasAnyContent ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <button onClick={handleCreateWithAI} disabled={!canGenerate}
+                      className={`btn-sage px-7 gap-2 ${!canGenerate ? 'opacity-50 cursor-not-allowed' : ''}`}>
                       <Sparkles className="w-4 h-4" />Create with AI &#x2736;
                     </button>
                   </div>
@@ -584,6 +592,11 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
                 {!hasAnyContent && (
                   <p className="font-body text-xs text-ink-400 text-center -mt-2">
                     Add at least one document or description to enable AI generation.
+                  </p>
+                )}
+                {hasAnyContent && aiModeRequiresSchoolCal && (
+                  <p className="font-body text-xs text-red-500 text-center -mt-2">
+                    “Let AI decide” requires a School Calendar / Key Dates — add it above to continue.
                   </p>
                 )}
               </>
@@ -892,12 +905,7 @@ export default function AppLandingPage() {
                 <div className="space-y-2">
                   {todayEvents.map(ev => (
                     <div key={ev.id} className="flex items-center gap-3 py-2 border-b border-ink-900/5 last:border-0">
-                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        ev.color === 'amber' ? 'bg-amber-400' :
-                        ev.color === 'blue'  ? 'bg-blue-500'  :
-                        ev.color === 'purple'? 'bg-purple-500':
-                        ev.color === 'red'   ? 'bg-red-500'   : 'bg-sage'
-                      }`} />
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-ink-900" />
                       <div className="flex-1 min-w-0">
                         <p className="font-body text-sm text-ink-900 truncate">{ev.title}</p>
                         {ev.allDay ? (

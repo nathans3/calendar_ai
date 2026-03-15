@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Calendar, ArrowLeft, Loader2, Plus, Trash2, Clock,
-  Check, School, User, LogOut, AlertCircle, Upload, ChevronRight
+  Check, School, User, LogOut, AlertCircle, Upload, ChevronRight, X
 } from 'lucide-react'
 import { api, clearSession, PeriodConfig, UserProfile } from '../../../lib/api'
 import { useAuth } from '../../../lib/useAuth'
@@ -149,6 +149,9 @@ export default function ProfilePage() {
   const [saving,         setSaving]         = useState(false)
   const [saved,          setSaved]          = useState(false)
   const [error,          setError]          = useState('')
+  const [isDirty,        setIsDirty]        = useState(false)
+  const [showNavWarning, setShowNavWarning] = useState(false)
+  const pendingNavRef = useRef<string | null>(null)
 
   // Account
   const [fullName,       setFullName]       = useState('')
@@ -181,6 +184,7 @@ export default function ProfilePage() {
         setTimezone((p as any).timezone || 'America/New_York')
         const ext = (p as any).specialDays
         if (ext && Array.isArray(ext)) setSpecialDays(ext)
+        setIsDirty(false)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -194,6 +198,7 @@ export default function ProfilePage() {
       dayEnd:   preset?.dayEnd   || schoolDayEnd,
       periods:  preset?.periods  || [],
     }])
+    setIsDirty(true)
   }
 
   // Parse a plain text schedule file into PeriodConfig[]
@@ -237,6 +242,7 @@ export default function ProfilePage() {
         ...(specialDays.length > 0 ? { specialDays } as any : {}),
       })
       setSaved(true)
+      setIsDirty(false)
       setTimeout(() => setSaved(false), 2500)
     } catch (e: any) {
       setError(e.message || 'Save failed')
@@ -261,11 +267,58 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-cream-100">
+      {/* ── Unsaved Changes Modal ── */}
+      {showNavWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="font-display text-xl text-ink-900">Unsaved changes</h3>
+                <p className="font-body text-sm text-ink-500 mt-1">Do you want to save your changes before leaving?</p>
+              </div>
+              <button onClick={() => setShowNavWarning(false)} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-ink-900/6">
+                <X className="w-3.5 h-3.5 text-ink-500" />
+              </button>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => {
+                  setShowNavWarning(false)
+                  if (pendingNavRef.current) router.push(pendingNavRef.current)
+                }}
+                className="btn-secondary flex-1 justify-center text-sm"
+              >
+                Discard
+              </button>
+              <button
+                onClick={async () => {
+                  setShowNavWarning(false)
+                  await handleSave()
+                  if (pendingNavRef.current) router.push(pendingNavRef.current)
+                }}
+                className="btn-sage flex-1 justify-center text-sm gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />Save &amp; leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <nav className="bg-cream-100/90 border-b border-ink-900/8 backdrop-blur-md sticky top-0 z-20">
         <div className="max-w-2xl mx-auto px-6 h-16 flex items-center justify-between">
-          <Link href="/app" className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors">
+          <button
+            onClick={() => {
+              if (isDirty) {
+                pendingNavRef.current = '/app'
+                setShowNavWarning(true)
+              } else {
+                router.push('/app')
+              }
+            }}
+            className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors"
+          >
             <ArrowLeft className="w-4 h-4" />Dashboard
-          </Link>
+          </button>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 bg-ink-900 rounded-lg flex items-center justify-center">
               <Calendar className="w-3.5 h-3.5 text-cream-100" />
@@ -293,12 +346,12 @@ export default function ProfilePage() {
           <div className="px-6 py-5 space-y-4">
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Full Name</label>
-              <input type="text" value={fullName} onChange={e => setFullName(e.target.value)}
+              <input type="text" value={fullName} onChange={e => { setFullName(e.target.value); setIsDirty(true) }}
                 placeholder="Your name" className="input-field w-full" />
             </div>
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">School Name</label>
-              <input type="text" value={schoolName} onChange={e => setSchoolName(e.target.value)}
+              <input type="text" value={schoolName} onChange={e => { setSchoolName(e.target.value); setIsDirty(true) }}
                 placeholder="e.g. Lincoln High School" className="input-field w-full" />
             </div>
             <div>
@@ -308,41 +361,14 @@ export default function ProfilePage() {
             </div>
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Time Zone</label>
-              <select value={timezone} onChange={e => setTimezone(e.target.value)} className="input-field w-full">
-                <optgroup label="North America">
-                  <option value="America/New_York">Eastern Time (ET)</option>
-                  <option value="America/Chicago">Central Time (CT)</option>
-                  <option value="America/Denver">Mountain Time (MT)</option>
-                  <option value="America/Phoenix">Arizona (no DST)</option>
-                  <option value="America/Los_Angeles">Pacific Time (PT)</option>
-                  <option value="America/Anchorage">Alaska (AKT)</option>
-                  <option value="Pacific/Honolulu">Hawaii (HT)</option>
-                </optgroup>
-                <optgroup label="Europe">
-                  <option value="Europe/London">London (GMT/BST)</option>
-                  <option value="Europe/Paris">Central Europe (CET/CEST)</option>
-                  <option value="Europe/Helsinki">Eastern Europe (EET)</option>
-                </optgroup>
-                <optgroup label="Middle East &amp; Africa">
-                  <option value="Asia/Dubai">Dubai (GST)</option>
-                  <option value="Africa/Cairo">Cairo (EET)</option>
-                  <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
-                </optgroup>
-                <optgroup label="Asia">
-                  <option value="Asia/Kolkata">India (IST)</option>
-                  <option value="Asia/Dhaka">Bangladesh (BST)</option>
-                  <option value="Asia/Bangkok">Bangkok (ICT)</option>
-                  <option value="Asia/Singapore">Singapore (SGT)</option>
-                  <option value="Asia/Shanghai">China (CST)</option>
-                  <option value="Asia/Tokyo">Japan (JST)</option>
-                  <option value="Asia/Seoul">Korea (KST)</option>
-                </optgroup>
-                <optgroup label="Australia &amp; Pacific">
-                  <option value="Australia/Perth">Perth (AWST)</option>
-                  <option value="Australia/Adelaide">Adelaide (ACST)</option>
-                  <option value="Australia/Sydney">Sydney (AEST)</option>
-                  <option value="Pacific/Auckland">Auckland (NZST)</option>
-                </optgroup>
+              <select value={timezone} onChange={e => { setTimezone(e.target.value); setIsDirty(true) }} className="input-field w-full">
+                <option value="America/New_York">Eastern Time (ET)</option>
+                <option value="America/Chicago">Central Time (CT)</option>
+                <option value="America/Denver">Mountain Time (MT)</option>
+                <option value="America/Phoenix">Arizona – no DST (MST)</option>
+                <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                <option value="America/Anchorage">Alaska (AKT)</option>
+                <option value="Pacific/Honolulu">Hawaii (HT)</option>
               </select>
             </div>
           </div>
@@ -384,15 +410,15 @@ export default function ProfilePage() {
               <div className="flex items-center gap-4">
                 <div className="flex-1">
                   <label className="font-body text-xs text-ink-500 mb-1 block">Starts</label>
-                  <input type="time" value={schoolDayStart} onChange={e => setSchoolDayStart(e.target.value)} className="input-field text-sm py-2 w-full" />
+                  <input type="time" value={schoolDayStart} onChange={e => { setSchoolDayStart(e.target.value); setIsDirty(true) }} className="input-field text-sm py-2 w-full" />
                 </div>
                 <div className="flex-1">
                   <label className="font-body text-xs text-ink-500 mb-1 block">Ends</label>
-                  <input type="time" value={schoolDayEnd} onChange={e => setSchoolDayEnd(e.target.value)} className="input-field text-sm py-2 w-full" />
+                  <input type="time" value={schoolDayEnd} onChange={e => { setSchoolDayEnd(e.target.value); setIsDirty(true) }} className="input-field text-sm py-2 w-full" />
                 </div>
               </div>
             </div>
-            <PeriodEditor periods={periods} setPeriods={setPeriods} defaultStart={schoolDayStart} />
+            <PeriodEditor periods={periods} setPeriods={(p) => { setPeriods(p); setIsDirty(true) }} defaultStart={schoolDayStart} />
           </div>
         </div>
 

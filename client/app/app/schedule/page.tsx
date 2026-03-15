@@ -6,7 +6,7 @@ import {
   Calendar, ChevronLeft, ChevronRight, Home, Plus, X,
   Clock, MapPin, AlignLeft, Repeat, ArrowLeft, ArrowRight, Loader2,
   Sparkles, CalendarDays, CheckCheck, RotateCcw,
-  Check
+  Check, Upload, Paperclip
 } from 'lucide-react'
 import {
   format, startOfWeek, addDays, isToday, addWeeks, subWeeks,
@@ -238,17 +238,30 @@ function ScheduleAISidebar({ onClose, onEventCreated, onEventDeleted, onEventMov
     id: '0', role: 'assistant',
     content: "Hi! I can add, delete, and reschedule events on your calendar.\n\nTry: \"Mark March 10 as a snow day\" or \"Delete my 3pm meeting today\" or \"Move my teacher meeting to Friday at 2pm\" or \"Add a parent conference Thursday at 4pm\".",
   }])
-  const [input,   setInput]   = useState('')
-  const [loading, setLoading] = useState(false)
+  const [input,        setInput]        = useState('')
+  const [loading,      setLoading]      = useState(false)
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
+  const [uploadLabel,  setUploadLabel]  = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
   const [conversationHistory, setConversationHistory] = useState<any[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   const send = async () => {
     if (!input.trim() || loading) return
-    const userMsg = { id: Date.now().toString(), role: 'user' as const, content: input.trim() }
+    let fileContext = ''
+    if (uploadedFile) {
+      try {
+        const res = await apiExtended.upload.extractText(uploadedFile)
+        fileContext = res.text ? `\n\n[Attached file: ${uploadedFile.name}]\n${res.text.slice(0, 3000)}` : ''
+      } catch { fileContext = '' }
+    }
+    const fullMessage = input.trim() + fileContext
+    const userMsg = { id: Date.now().toString(), role: 'user' as const, content: input.trim() + (uploadedFile ? ` [+${uploadedFile.name}]` : '') }
     setMessages(p => [...p, userMsg])
     setInput('')
+    setUploadedFile(null)
+    setUploadLabel('')
     setLoading(true)
     try {
       // Build a simple calendar context from current events so AI knows what exists
@@ -261,7 +274,7 @@ function ScheduleAISidebar({ onClose, onEventCreated, onEventDeleted, onEventMov
       }, {} as Record<string, any>)
 
       const res = await apiExtended.ai.chat({
-        message: userMsg.content,
+        message: fullMessage,
         courseId: '',
         selectedDate: format(new Date(), 'yyyy-MM-dd'),
         calendarContext: eventsContext,
@@ -383,7 +396,29 @@ function ScheduleAISidebar({ onClose, onEventCreated, onEventDeleted, onEventMov
         <div ref={bottomRef} />
       </div>
       <div className="p-3 border-t border-ink-900/8 bg-white">
+        {uploadedFile && (
+          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-sage/8 border border-sage/20 rounded-lg">
+            <Paperclip className="w-3 h-3 text-sage flex-shrink-0" />
+            <span className="font-body text-[11px] text-sage-700 flex-1 truncate">{uploadedFile.name}</span>
+            <button onClick={() => { setUploadedFile(null); setUploadLabel('') }} className="text-ink-400 hover:text-red-500 ml-1">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         <div className="flex gap-2 items-end">
+          <button
+            onClick={() => fileRef.current?.click()}
+            title="Attach a file"
+            className="flex-shrink-0 w-8 h-8 rounded-xl flex items-center justify-center border border-ink-900/12 hover:border-sage/50 hover:bg-sage/5 transition-all text-ink-400 hover:text-sage mb-0.5"
+          >
+            <Upload className="w-3.5 h-3.5" />
+          </button>
+          <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.txt,.csv" className="hidden"
+            onChange={e => {
+              const f = e.target.files?.[0]
+              if (f) { setUploadedFile(f); setUploadLabel(f.name) }
+              e.target.value = ''
+            }} />
           <textarea value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             placeholder="Ask about your schedule…" rows={2}
