@@ -33,7 +33,7 @@ export function useAuth(redirectOnFail = true): AuthState & { refresh: () => voi
           // Map demo session to User shape
           setState({
             user: {
-              id: `demo-${session.userId || 'user'}`,
+              id: session.userId || 'demo-user',
               email: session.email || 'demo@example.com',
               fullName: session.name || 'Demo User',
               schoolName: session.school || '',

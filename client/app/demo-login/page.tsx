@@ -62,7 +62,7 @@ function loginAsDemo(account: typeof DEMO_ACCOUNTS[0], router: ReturnType<typeof
       calendars: account.calendars,
     }))
   }
-  router.push('/app')
+  router.push('/app/onboarding')
 }
 
 // ─── Account Card ──────────────────────────────────────

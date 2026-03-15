@@ -114,6 +114,9 @@ router.post('/login', async (req: Request, res: Response) => {
       user.plan = 'pro'
     }
 
+    // Track last login time
+    await db.query('UPDATE users SET last_login=NOW() WHERE id=$1', [user.id])
+
     const token = signToken(user.id)
 
     res
@@ -293,6 +296,35 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
     })
   } catch (err) {
     console.error('Profile update error:', err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
+// ── GET /api/auth/admin/users ─────────────────────────────
+// Protected by ADMIN_SECRET env var — only for the app owner
+router.get('/admin/users', async (req: Request, res: Response) => {
+  try {
+    const adminKey = req.headers['x-admin-key']
+    const secret = process.env.ADMIN_SECRET
+    if (!secret || adminKey !== secret) {
+      return res.status(403).json({ message: 'Forbidden.' })
+    }
+    const result = await db.query(
+      `SELECT id, email, full_name, school_name, plan, created_at, last_login
+       FROM users ORDER BY created_at DESC`
+    )
+    const stats = await db.query(`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')  AS signups_7d,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS signups_30d,
+        COUNT(*) FILTER (WHERE last_login  >= NOW() - INTERVAL '7 days')  AS logins_7d,
+        COUNT(*) FILTER (WHERE last_login  >= NOW() - INTERVAL '30 days') AS logins_30d
+      FROM users
+    `)
+    res.json({ users: result.rows, stats: stats.rows[0] })
+  } catch (err) {
+    console.error('Admin users error:', err)
     res.status(500).json({ message: 'Server error.' })
   }
 })

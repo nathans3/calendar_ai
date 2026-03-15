@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_day_start TEXT NOT NULL DEFAULT '08:00';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS school_day_end   TEXT NOT NULL DEFAULT '15:00';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS periods          JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login       TIMESTAMPTZ;
 
 -- ─── Courses (Calendars) ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS courses (
