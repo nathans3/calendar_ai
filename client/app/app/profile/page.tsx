@@ -153,6 +153,7 @@ export default function ProfilePage() {
   // Account
   const [fullName,       setFullName]       = useState('')
   const [schoolName,     setSchoolName]     = useState('')
+  const [timezone,       setTimezone]       = useState('America/New_York')
 
   // Regular schedule
   const [schoolDayStart, setSchoolDayStart] = useState('08:00')
@@ -177,6 +178,7 @@ export default function ProfilePage() {
         setSchoolDayStart(p.schoolDayStart || '08:00')
         setSchoolDayEnd(p.schoolDayEnd || '15:00')
         setPeriods(p.periods || [])
+        setTimezone((p as any).timezone || 'America/New_York')
         const ext = (p as any).specialDays
         if (ext && Array.isArray(ext)) setSpecialDays(ext)
       })
@@ -231,7 +233,7 @@ export default function ProfilePage() {
     setError('')
     try {
       await api.profile.update({
-        fullName, schoolName, schoolDayStart, schoolDayEnd, periods,
+        fullName, schoolName, schoolDayStart, schoolDayEnd, periods, timezone,
         ...(specialDays.length > 0 ? { specialDays } as any : {}),
       })
       setSaved(true)
@@ -303,6 +305,45 @@ export default function ProfilePage() {
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Email</label>
               <input type="email" value={profile?.email || ''} disabled
                 className="input-field w-full opacity-50 cursor-not-allowed" />
+            </div>
+            <div>
+              <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Time Zone</label>
+              <select value={timezone} onChange={e => setTimezone(e.target.value)} className="input-field w-full">
+                <optgroup label="North America">
+                  <option value="America/New_York">Eastern Time (ET)</option>
+                  <option value="America/Chicago">Central Time (CT)</option>
+                  <option value="America/Denver">Mountain Time (MT)</option>
+                  <option value="America/Phoenix">Arizona (no DST)</option>
+                  <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                  <option value="America/Anchorage">Alaska (AKT)</option>
+                  <option value="Pacific/Honolulu">Hawaii (HT)</option>
+                </optgroup>
+                <optgroup label="Europe">
+                  <option value="Europe/London">London (GMT/BST)</option>
+                  <option value="Europe/Paris">Central Europe (CET/CEST)</option>
+                  <option value="Europe/Helsinki">Eastern Europe (EET)</option>
+                </optgroup>
+                <optgroup label="Middle East &amp; Africa">
+                  <option value="Asia/Dubai">Dubai (GST)</option>
+                  <option value="Africa/Cairo">Cairo (EET)</option>
+                  <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+                </optgroup>
+                <optgroup label="Asia">
+                  <option value="Asia/Kolkata">India (IST)</option>
+                  <option value="Asia/Dhaka">Bangladesh (BST)</option>
+                  <option value="Asia/Bangkok">Bangkok (ICT)</option>
+                  <option value="Asia/Singapore">Singapore (SGT)</option>
+                  <option value="Asia/Shanghai">China (CST)</option>
+                  <option value="Asia/Tokyo">Japan (JST)</option>
+                  <option value="Asia/Seoul">Korea (KST)</option>
+                </optgroup>
+                <optgroup label="Australia &amp; Pacific">
+                  <option value="Australia/Perth">Perth (AWST)</option>
+                  <option value="Australia/Adelaide">Adelaide (ACST)</option>
+                  <option value="Australia/Sydney">Sydney (AEST)</option>
+                  <option value="Pacific/Auckland">Auckland (NZST)</option>
+                </optgroup>
+              </select>
             </div>
           </div>
         </div>

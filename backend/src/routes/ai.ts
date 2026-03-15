@@ -943,7 +943,7 @@ Respond with ONLY the JSON array, no explanation, no markdown.`,
 // Respects school calendar holidays extracted from context.
 router.post('/generate-calendar', async (req: AuthRequest, res: Response) => {
   try {
-    const { courseId, contextText, maxDays } = req.body
+    const { courseId, contextText, maxDays, startDate } = req.body
     if (!courseId) return res.status(400).json({ message: 'courseId required.' })
     if (!contextText?.trim()) return res.status(400).json({ message: 'No context provided. Please add a syllabus or description.' })
 
@@ -951,18 +951,30 @@ router.post('/generate-calendar', async (req: AuthRequest, res: Response) => {
     if (owner.rows.length === 0) return res.status(403).json({ message: 'Course not found.' })
     const course = owner.rows[0]
 
-    // Always start from today in US Eastern time
+    // Determine start date:
+    // - undefined / 'today' → today in US Eastern
+    // - 'ai' → let AI pick (we'll pass hint to context; for now default to today, AI can override via keyDates)
+    // - 'YYYY-MM-DD' → use that date directly
     const fmtEst = (opts: Intl.DateTimeFormatOptions) =>
       new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', ...opts }).format(new Date())
     const todayEST = fmtEst({ year: 'numeric', month: '2-digit', day: '2-digit' })
       .replace(/(\d+)\/(\d+)\/(\d+)/, '$3-$1-$2')
 
+    // Resolve planStartDate
+    let planStartDate = todayEST
+    if (startDate && startDate !== 'today' && startDate !== 'ai' && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      planStartDate = startDate
+    }
+    // For 'ai' mode, add a hint to the context so the AI can pick from keyDates
+    const aiStartHint = startDate === 'ai'
+      ? '\n\n[PLANNING HINT]\nDetermine the best start date for planning based on the school calendar and syllabus. Look for the first day of school, semester start, or the first instructional day after any breaks.'
+      : ''
+
     // Honour the requested maxDays (default 22 = ~1 month, max 200)
     const cap = typeof maxDays === 'number' && maxDays > 0 ? Math.min(maxDays, 200) : 22
 
     // Build a date range wide enough to contain `cap` school days after removing holidays
-    // 2x multiplier + 30 day buffer accounts for weekends and potential holiday density
-    const endEstimate = new Date(todayEST + 'T12:00:00Z')
+    const endEstimate = new Date(planStartDate + 'T12:00:00Z')
     endEstimate.setUTCDate(endEstimate.getUTCDate() + Math.ceil(cap * 2) + 30)
     const rangeEnd = endEstimate.toISOString().slice(0, 10)
 
@@ -973,37 +985,33 @@ router.post('/generate-calendar', async (req: AuthRequest, res: Response) => {
       : ''
 
     // Parse contextText to find the school calendar section specifically
-    // Only feed that section to holiday extraction — feeding the full syllabus causes
-    // the AI to misinterpret unit date ranges as holidays.
     const schoolCalMatch = contextText.match(/\[SCHOOL CALENDAR\]([\s\S]*?)(?=\[|$)/i)
     const schoolCalText = schoolCalMatch ? schoolCalMatch[1].trim() : ''
 
-    // Extract teacher instructions — these are MANDATORY rules for generation
+    // Extract teacher instructions
     const teacherInstrMatch = contextText.match(/\[TEACHER INSTRUCTIONS\]([\s\S]*?)(?=\[|$)/i)
-    const teacherInstructions = teacherInstrMatch ? teacherInstrMatch[1].trim() : ''
+    const teacherInstructions = (teacherInstrMatch ? teacherInstrMatch[1].trim() : '') + aiStartHint
 
-    // Extract requirements — also treated as mandatory rules (counts, hw frequency, etc.)
+    // Extract requirements
     const requirementsMatchEarly = contextText.match(/\[REQUIREMENTS\]([\s\S]*?)(?=\[|$)/i)
     const requirementsText = requirementsMatchEarly ? requirementsMatchEarly[1].trim() : ''
 
-    // Combine both into one string for quota/hw parsing — requirements often contain
-    // the exact counts ("2 tests", "hw every other day") that the user types there.
+    // Combine both into one string for quota/hw parsing
     const allRulesText = [teacherInstructions, requirementsText].filter(Boolean).join('\n')
 
-    // Extract holidays ONLY from the school calendar section, not the full context.
-    // If no school calendar was provided, skip holiday extraction entirely.
+    // Extract holidays ONLY from the school calendar section
     const [holidays, keyDates] = schoolCalText.trim()
       ? await Promise.all([
-          extractHolidaysFromContext(openai, schoolCalText, todayEST, rangeEnd),
-          extractKeyDatesFromContext(openai, schoolCalText, todayEST, rangeEnd),
+          extractHolidaysFromContext(openai, schoolCalText, planStartDate, rangeEnd),
+          extractKeyDatesFromContext(openai, schoolCalText, planStartDate, rangeEnd),
         ])
       : [new Set<string>(), [] as Array<{ date: string; label: string }>]
 
     // Build final school day list excluding holidays
-    const allSchoolDays = getSchoolDays(todayEST, rangeEnd).filter(d => !holidays.has(d))
+    const allSchoolDays = getSchoolDays(planStartDate, rangeEnd).filter(d => !holidays.has(d))
     const cappedDays = allSchoolDays.slice(0, cap)
 
-    console.log(`[generate-calendar] cap=${cap}, allSchoolDays=${allSchoolDays.length}, holidays=${holidays.size}, cappedDays=${cappedDays.length}, range=${todayEST}→${rangeEnd}`)
+    console.log(`[generate-calendar] start=${planStartDate}, cap=${cap}, allSchoolDays=${allSchoolDays.length}, holidays=${holidays.size}, cappedDays=${cappedDays.length}, range=${planStartDate}→${rangeEnd}`)
     console.log(`[generate-calendar] First 10 cappedDays: ${cappedDays.slice(0,10).join(', ')}`)
 
     if (cappedDays.length === 0) {

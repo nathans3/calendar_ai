@@ -199,6 +199,7 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       regularPeriods = rawPeriods.regular || []
       specialDays    = rawPeriods.special  || []
     }
+    const timezone = rawPeriods?._v === 2 ? (rawPeriods.timezone || 'America/New_York') : 'America/New_York'
     res.json({
       id: user.id,
       email: user.email,
@@ -209,6 +210,7 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       schoolDayEnd: user.school_day_end || '15:00',
       periods: regularPeriods,
       specialDays,
+      timezone,
     })
   } catch (err) {
     console.error('Profile get error:', err)
@@ -220,24 +222,26 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
 // Updates user profile settings including periods
 router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { fullName, schoolName, schoolDayStart, schoolDayEnd, periods, specialDays } = req.body
+    const { fullName, schoolName, schoolDayStart, schoolDayEnd, periods, specialDays, timezone } = req.body
 
     // Validate periods array structure
     if (periods !== undefined && !Array.isArray(periods)) {
       return res.status(400).json({ message: 'periods must be an array.' })
     }
 
-    // Encode periods + specialDays into a single JSONB column as versioned wrapper
+    // Encode periods + specialDays + timezone into a single JSONB column as versioned wrapper
     let periodsPayload: any = null
-    if (periods !== undefined || specialDays !== undefined) {
+    if (periods !== undefined || specialDays !== undefined || timezone !== undefined) {
       // Fetch current value to merge
       const cur = await db.query(`SELECT periods FROM users WHERE id=$1`, [req.userId])
       const raw = cur.rows[0]?.periods
       let curRegular = Array.isArray(raw) ? raw : (raw?._v === 2 ? raw.regular || [] : [])
       let curSpecial = Array.isArray(raw) ? [] : (raw?._v === 2 ? raw.special || [] : [])
-      const newRegular = periods   !== undefined ? periods    : curRegular
+      const curTz = Array.isArray(raw) ? 'America/New_York' : (raw?._v === 2 ? raw.timezone || 'America/New_York' : 'America/New_York')
+      const newRegular = periods    !== undefined ? periods    : curRegular
       const newSpecial = specialDays !== undefined ? specialDays : curSpecial
-      periodsPayload = JSON.stringify({ _v: 2, regular: newRegular, special: newSpecial })
+      const newTz      = timezone   !== undefined ? timezone   : curTz
+      periodsPayload = JSON.stringify({ _v: 2, regular: newRegular, special: newSpecial, timezone: newTz })
     }
 
     const result = await db.query(
@@ -274,6 +278,7 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       retRegular = rawPeriods2.regular || []
       retSpecial = rawPeriods2.special  || []
     }
+    const retTz = rawPeriods2?._v === 2 ? (rawPeriods2.timezone || 'America/New_York') : 'America/New_York'
     res.json({
       id: user.id,
       email: user.email,
@@ -284,6 +289,7 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       schoolDayEnd: user.school_day_end || '15:00',
       periods: retRegular,
       specialDays: retSpecial,
+      timezone: retTz,
     })
   } catch (err) {
     console.error('Profile update error:', err)

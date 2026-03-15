@@ -42,7 +42,7 @@ export const api = {
   // ─── User Profile (periods & schedule settings) ────────
   profile: {
     get: () => request<UserProfile>('/api/auth/profile'),
-    update: (data: Partial<Pick<UserProfile, 'fullName' | 'schoolName' | 'schoolDayStart' | 'schoolDayEnd' | 'periods' | 'specialDays'>>) =>
+    update: (data: Partial<Pick<UserProfile, 'fullName' | 'schoolName' | 'schoolDayStart' | 'schoolDayEnd' | 'periods' | 'specialDays' | 'timezone'>>) =>
       request<UserProfile>('/api/auth/profile', { method: 'PUT', body: JSON.stringify(data) }),
   },
 
@@ -109,6 +109,7 @@ export interface UserProfile extends User {
   schoolDayEnd: string     // HH:MM
   periods: PeriodConfig[]
   specialDays?: SpecialDaySchedule[]
+  timezone?: string
 }
 
 export interface Course {
@@ -202,8 +203,9 @@ export const apiExtended = {
 
     generateCalendar: (data: {
       courseId: string
-      contextText: string   // all extracted text inline — starts from today
+      contextText: string   // all extracted text inline
       maxDays?: number
+      startDate?: string    // YYYY-MM-DD or 'ai' (let AI decide) or undefined = today
     }) => request<{ applied: number; months: number; message: string }>(
       '/api/ai/generate-calendar', { method: 'POST', body: JSON.stringify(data) }
     ),

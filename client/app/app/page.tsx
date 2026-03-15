@@ -52,7 +52,6 @@ interface DocField {
 const DOC_FIELDS: DocField[] = [
   { key: 'syllabusText',     fileKey: 'syllabusFile',  label: 'Syllabus',                   placeholder: 'Paste syllabus content, unit list, or topics…' },
   { key: 'schoolCalText',    fileKey: 'schoolCalFile', label: 'School calendar / key dates', placeholder: 'Paste holidays, breaks, exam weeks, marking periods…' },
-  { key: 'meetingText',      fileKey: 'meetingFile',   label: 'Class meeting schedule',      placeholder: 'Paste bell schedule or which days class meets…' },
   { key: 'requirementsText', fileKey: 'reqFile',       label: 'Requirements',                placeholder: 'e.g. 4 tests required, state standards to cover…' },
 ]
 
@@ -163,6 +162,8 @@ interface AIFormFields {
   requirementsText: string; reqFile:       File | null
   additionalInfo: string
   maxDays: number
+  startDateMode: 'today' | 'pick' | 'ai'
+  startDate: string
 }
 
 // ─── Utilities ────────────────────────────────────────────
@@ -194,6 +195,8 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
     requirementsText: '', reqFile:       null,
     additionalInfo: '',
     maxDays: 22,
+    startDateMode: 'today',
+    startDate: format(new Date(), 'yyyy-MM-dd'),
   })
 
   // Load saved periods for the period dropdown
@@ -280,7 +283,7 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
       return
     }
 
-    // Step 3 — generate (starts from today automatically on backend)
+    // Step 3 — generate
     setGenStatus({ phase: 'generating' })
     let result: { applied: number; months: number }
     try {
@@ -288,6 +291,7 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
         courseId: cal.id,
         contextText,
         maxDays: ai.maxDays,
+        startDate: ai.startDateMode === 'today' ? undefined : ai.startDateMode === 'pick' ? ai.startDate : 'ai',
       })
     } catch (err) {
       setGenStatus({
@@ -491,6 +495,39 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
                     ))}
                   </div>
                   <p className="font-body text-[11px] text-ink-400">You can always extend the calendar later using the AI sidebar.</p>
+                </div>
+
+                {/* Start date selector */}
+                <div className="bg-white border border-ink-900/10 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <CalendarDays className="w-3.5 h-3.5 text-sage" />
+                    <span className="font-body text-xs font-semibold text-ink-700 uppercase tracking-wide">When to start planning</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { mode: 'today', label: 'Start today',      detail: 'Begin planning from ' + format(new Date(), 'MMM d') },
+                      { mode: 'pick',  label: 'Pick a date',       detail: 'Choose a specific start date' },
+                      { mode: 'ai',    label: 'Let AI decide',     detail: 'AI picks based on your documents' },
+                    ] as const).map(opt => (
+                      <button key={opt.mode} type="button"
+                        onClick={() => setAi(f => ({ ...f, startDateMode: opt.mode }))}
+                        className={`text-left px-3 py-2.5 rounded-lg border transition-all ${ai.startDateMode === opt.mode ? 'border-sage bg-sage/8 ring-1 ring-sage/30' : 'border-ink-900/10 bg-ink-50/40 hover:border-ink-900/20'}`}>
+                        <div className="font-body text-sm font-medium text-ink-800">{opt.label}</div>
+                        <div className="font-body text-[11px] text-ink-400 mt-0.5">{opt.detail}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {ai.startDateMode === 'pick' && (
+                    <input type="date" value={ai.startDate}
+                      onChange={e => setAi(f => ({ ...f, startDate: e.target.value }))}
+                      min={format(new Date(), 'yyyy-MM-dd')}
+                      className="input-field text-sm py-2 w-full" />
+                  )}
+                  {ai.startDateMode === 'ai' && (
+                    <p className="font-body text-[11px] text-ink-500 bg-sage/5 border border-sage/15 rounded-lg px-3 py-2">
+                      The AI will look at your school calendar, syllabbus, and context to pick the best start date automatically.
+                    </p>
+                  )}
                 </div>
 
                 {/* Document fields */}
@@ -748,11 +785,14 @@ export default function AppLandingPage() {
     api.events.list(month)
       .then(events => {
         const todayStr = format(new Date(), 'yyyy-MM-dd')
-        const nowTime  = format(new Date(), 'HH:mm')
         const upcoming = events
           .filter(e => e.date === todayStr)
-          .filter(e => e.allDay || !e.endTime || e.endTime >= nowTime)
-          .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'))
+          .sort((a, b) => {
+            // All-day events first, then sort by startTime
+            if (a.allDay && !b.allDay) return -1
+            if (!a.allDay && b.allDay) return 1
+            return (a.startTime || '00:00').localeCompare(b.startTime || '00:00')
+          })
         setTodayEvents(upcoming)
       })
       .catch(() => {})
@@ -832,8 +872,8 @@ export default function AppLandingPage() {
                 <h2 className="font-body font-semibold text-sm text-ink-900">My Schedule</h2>
                 <span className="font-body text-xs text-ink-400 bg-ink-900/6 px-2 py-0.5 rounded-full">Today</span>
               </div>
-              <Link href="/app/schedule" className="font-body text-xs text-sage hover:text-sage-700 transition-colors flex items-center gap-1">
-                Full calendar <ArrowRight className="w-3 h-3" />
+              <Link href="/app/schedule" className="btn-sage py-1.5 px-3 text-xs gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5" />Full Calendar
               </Link>
             </div>
             <div className="flex-1 px-6 py-4">
@@ -843,7 +883,7 @@ export default function AppLandingPage() {
                 </div>
               ) : todayEvents.length === 0 ? (
                 <div className="text-center py-8">
-                  <p className="font-body text-sm text-ink-400 mb-1">No upcoming events today</p>
+                  <p className="font-body text-sm text-ink-400 mb-1">No events today</p>
                   <Link href="/app/schedule" className="font-body text-xs text-sage hover:underline">
                     View full schedule →
                   </Link>
@@ -860,11 +900,13 @@ export default function AppLandingPage() {
                       }`} />
                       <div className="flex-1 min-w-0">
                         <p className="font-body text-sm text-ink-900 truncate">{ev.title}</p>
-                        {!ev.allDay && ev.startTime && (
+                        {ev.allDay ? (
+                          <p className="font-body text-xs text-ink-400">All day</p>
+                        ) : ev.startTime ? (
                           <p className="font-body text-xs text-ink-400">
                             {fmt12(ev.startTime)}{ev.endTime ? ` – ${fmt12(ev.endTime)}` : ''}
                           </p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   ))}

@@ -479,13 +479,14 @@ function FullMonthView({ currentDate, events, onDayClick, onEventClick, onDragMo
   const onDragEnd = () => { setDraggingId(null); setDragOverDs(null) }
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="grid grid-cols-7 border-b border-ink-900/8 bg-white sticky top-0 z-10">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="grid grid-cols-7 border-b border-ink-900/8 bg-white flex-shrink-0 z-10">
         {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
           <div key={d} className="py-2.5 text-center"><span className="font-body text-xs font-medium text-ink-400 uppercase tracking-wide">{d}</span></div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div className="flex-1 overflow-auto">
+      <div className="grid grid-cols-7 h-full" style={{ gridAutoRows: '1fr' }}>
         {allDays.map(day => {
           const ds = format(day, 'yyyy-MM-dd')
           const isClosed    = closedDates.has(ds)
@@ -536,6 +537,7 @@ function FullMonthView({ currentDate, events, onDayClick, onEventClick, onDragMo
             </div>
           )
         })}
+      </div>
       </div>
     </div>
   )
@@ -645,9 +647,9 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
           {days.map(day => {
             const ds = format(day, 'yyyy-MM-dd')
             const isClosed    = closedDates.has(ds)
-            // On closed days, hide only period/class events (weekly sage repeating) — keep user events
-            const isPeriodEvent = (e: LocalEvent) => e.color === 'sage' && e.repeatRule === 'weekly'
-            const timedEvents   = events.filter(e => e.date === ds && !e.allDay && !e.isClosedDay && !(isClosed && isPeriodEvent(e)))
+            // On closed days, hide period blocks and repeat instances of recurring events
+            const isRepeatInstance = (e: LocalEvent) => e.id.includes('__') || !!e.isPeriodBlock
+            const timedEvents   = events.filter(e => e.date === ds && !e.allDay && !e.isClosedDay && !(isClosed && isRepeatInstance(e)))
             return (
               <div key={ds}
                 onDragOver={e => { e.preventDefault(); setDragOverDs(ds) }}
