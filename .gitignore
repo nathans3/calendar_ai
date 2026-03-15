@@ -34,3 +34,5 @@ yarn-error.log*
 
 # ─── Upload tmp ───────────────────────────────────────────
 backend/uploads/
+.vercel
+.env*.local

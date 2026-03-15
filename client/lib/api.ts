@@ -121,10 +121,18 @@ export interface LessonData {
 
 export interface CalEvent {
   id: string
-  courseId: string
+  courseId?: string
   date: string
   title: string
-  type: string
+  type?: string
+  startTime?: string
+  endTime?: string
+  allDay?: boolean
+  schoolWide?: boolean
+  color?: string
+  location?: string
+  description?: string
+  repeatRule?: string
 }
 
 export function saveSession(token: string, user: User) {

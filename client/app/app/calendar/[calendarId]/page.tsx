@@ -333,10 +333,6 @@ function TopNav({ calendarName, period, currentDate, view, onViewChange, onToday
         <Link href="/app/schedule" className="font-body text-xs font-medium text-ink-700 px-3 py-1.5 rounded-lg border border-ink-900/12 hover:border-ink-900/30 transition-all flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5" />My Schedule
         </Link>
-        <button onClick={onAiToggle} title={aiOpen ? 'Collapse sidebar' : 'Expand AI sidebar'}
-          className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${aiOpen ? 'bg-sage border-sage text-white shadow-md' : 'bg-white border-ink-900/20 text-ink-600 hover:border-sage/60'}`}>
-          {aiOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-        </button>
       </div>
     </div>
   )
@@ -1296,9 +1292,11 @@ function AISidebar({
 
         {docsOpen && (
           <div className="px-4 pb-3 bg-cream-50 space-y-2">
-            <p className="font-body text-[10px] text-ink-400 leading-snug">
-              Upload syllabi, pacing guides, or school calendars. Use the 📎 button in the chat to attach one when you want the AI to reference it.
-            </p>
+            {docs.length === 0 && (
+              <p className="font-body text-[10px] text-ink-400 leading-snug">
+                Upload syllabi, pacing guides, or school calendars. Use the 📎 button in the chat to attach one when you want the AI to reference it.
+              </p>
+            )}
 
             {/* Uploaded docs list */}
             {docs.length > 0 && (
@@ -1480,10 +1478,17 @@ function AISidebar({
         )}
 
         <div className="flex gap-1.5 items-center bg-cream-50 border border-ink-900/12 rounded-xl px-2 focus-within:border-sage/50 focus-within:ring-2 focus-within:ring-sage/10 transition-all">
-          {/* Attach button */}
+          {/* Attach button — opens doc picker if docs exist, else opens Course Documents panel */}
           <button
-            onClick={() => setShowDocPicker(o => !o)}
-            title="Attach a document"
+            onClick={() => {
+              if (docs.length === 0) {
+                setDocsOpen(true)
+                setShowDocPicker(false)
+              } else {
+                setShowDocPicker(o => !o)
+              }
+            }}
+            title={docs.length === 0 ? 'Upload a document first' : 'Attach a document'}
             className={`flex-shrink-0 flex items-center justify-center transition-all ${
               showDocPicker || attachedDocs.length > 0 ? 'text-sage' : 'text-ink-400 hover:text-ink-600'
             }`}
@@ -1509,6 +1514,36 @@ function AISidebar({
 }
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+// ─── Sidebar Toggle Handle ────────────────────────────────
+// Hover the vertical border between calendar and sidebar to reveal a
+// clickable arrow handle. Click it (or the border itself) to open/close.
+function SidebarHandle({ aiOpen, onToggle }: { aiOpen: boolean; onToggle: () => void }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      className="relative flex-shrink-0 flex items-center justify-center cursor-pointer select-none z-10"
+      style={{ width: '12px' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onToggle}
+      title={aiOpen ? 'Collapse AI sidebar' : 'Expand AI sidebar'}
+    >
+      {/* The visible line */}
+      <div className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-px transition-all duration-150
+        ${hovered ? 'bg-sage/60 w-0.5' : 'bg-ink-900/10'}`} />
+      {/* Arrow pill — visible on hover */}
+      <div className={`absolute z-10 flex items-center justify-center w-5 h-8 rounded-full border
+        bg-white shadow-md transition-all duration-150
+        ${hovered ? 'opacity-100 border-sage/40 text-sage' : 'opacity-0 border-ink-900/10 text-ink-400'}
+        `}>
+        {aiOpen
+          ? <ChevronRight className="w-3 h-3" />
+          : <ChevronLeft className="w-3 h-3" />}
+      </div>
+    </div>
+  )
+}
 
 // ─── Page ─────────────────────────────────────────────────
 export default function CalendarPage({ params }: { params: { calendarId: string } }) {
@@ -1680,7 +1715,7 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         <div className="flex flex-col flex-1 overflow-hidden">
           {view === 'month'
             ? <MonthlyView currentDate={currentDate} dayData={dayData}
@@ -1697,6 +1732,8 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
                 onRescheduleRequest={handleRescheduleRequest}
                 onDragMove={handleDragMove} />}
         </div>
+        {/* Sidebar toggle handle — hover the border to reveal, click to open/close */}
+        <SidebarHandle aiOpen={aiOpen} onToggle={() => setAiOpen(v => !v)} />
         {aiOpen && (
           <AISidebar
             selectedDate={selectedDate}

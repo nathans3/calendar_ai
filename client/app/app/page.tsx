@@ -1,16 +1,17 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   Calendar, Plus, LogOut, X, ArrowRight, ChevronRight, ChevronDown,
   Upload, BookOpen, CalendarDays, Loader2, Sparkles,
   CheckCircle, AlertCircle, FileText, Clock, Settings, School,
-  Trash2, GripVertical, Check, Copy, HelpCircle
+  Trash2, GripVertical, Check, Copy, HelpCircle, User
 } from 'lucide-react'
-import { api, apiExtended, Course, ApiError, clearSession, PeriodConfig, UserProfile } from '../../lib/api'
+import { api, apiExtended, Course, ApiError, clearSession, PeriodConfig, UserProfile, CalEvent } from '../../lib/api'
 import { useAuth } from '../../lib/useAuth'
+import { format, isToday, parseISO, isBefore } from 'date-fns'
 
 const COLOR_CYCLE = ['sage', 'amber', 'blue', 'purple', 'red']
 const dotMap: Record<string, string> = {
@@ -172,254 +173,6 @@ function fmt12(t: string) {
   const ampm = h >= 12 ? 'PM' : 'AM'
   const h12  = h % 12 === 0 ? 12 : h % 12
   return m === 0 ? `${h12} ${ampm}` : `${h12}:${String(m).padStart(2,'0')} ${ampm}`
-}
-
-// ─── Manage School Schedule Section ───────────────────────
-function ManageScheduleSection() {
-  const [open,          setOpen]          = useState(false)
-  const [profile,       setProfile]       = useState<UserProfile | null>(null)
-  const [loading,       setLoading]       = useState(false)
-  const [saving,        setSaving]        = useState(false)
-  const [saved,         setSaved]         = useState(false)
-  const [error,         setError]         = useState('')
-
-  // Local editable state
-  const [schoolDayStart, setSchoolDayStart] = useState('08:00')
-  const [schoolDayEnd,   setSchoolDayEnd]   = useState('15:00')
-  const [periods,        setPeriods]        = useState<PeriodConfig[]>([])
-
-  useEffect(() => {
-    if (!open) return
-    setLoading(true)
-    api.profile.get()
-      .then(p => {
-        setProfile(p)
-        setSchoolDayStart(p.schoolDayStart || '08:00')
-        setSchoolDayEnd(p.schoolDayEnd || '15:00')
-        setPeriods(p.periods || [])
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [open])
-
-  const addPeriod = () => {
-    const id = `p${Date.now()}`
-    // Auto-compute start time from previous period's end time
-    const lastEnd = periods.length > 0 ? periods[periods.length - 1].endTime : schoolDayStart
-    const [h, m] = lastEnd.split(':').map(Number)
-    const startMins = h * 60 + m
-    const endMins   = startMins + 45
-    const toHHMM = (mins: number) => {
-      const hh = Math.floor(mins / 60) % 24
-      const mm = mins % 60
-      return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`
-    }
-    setPeriods(prev => [...prev, {
-      id,
-      label: `Period ${prev.length + 1}`,
-      durationMinutes: 45,
-      startTime: toHHMM(startMins),
-      endTime:   toHHMM(endMins),
-    }])
-  }
-
-  const updatePeriod = (id: string, field: keyof PeriodConfig, value: string | number) => {
-    setPeriods(prev => prev.map(p => {
-      if (p.id !== id) return p
-      const updated = { ...p, [field]: value }
-      // Auto-update endTime when startTime or durationMinutes changes
-      if (field === 'startTime' || field === 'durationMinutes') {
-        const [h, m] = (field === 'startTime' ? String(value) : updated.startTime).split(':').map(Number)
-        const dur = field === 'durationMinutes' ? Number(value) : updated.durationMinutes
-        const endMins = h * 60 + m + dur
-        updated.endTime = `${String(Math.floor(endMins / 60) % 24).padStart(2,'0')}:${String(endMins % 60).padStart(2,'0')}`
-      }
-      return updated
-    }))
-  }
-
-  const removePeriod = (id: string) => setPeriods(prev => prev.filter(p => p.id !== id))
-
-  const handleSave = async () => {
-    setSaving(true)
-    setError('')
-    try {
-      await api.profile.update({ schoolDayStart, schoolDayEnd, periods })
-
-      // Seed each period as a real weekly recurring event on My Schedule.
-      // We use the next occurrence of each weekday (Mon–Fri) as the base date
-      // so the weekly repeat fills the calendar automatically.
-      // We create 5 events per period (one per weekday) so they appear every day.
-      const today = new Date()
-      const WEEKDAYS = [1, 2, 3, 4, 5] // Mon–Fri
-
-      for (const p of periods) {
-        for (const targetDow of WEEKDAYS) {
-          // Find next date that falls on targetDow
-          const base = new Date(today)
-          const diff = (targetDow - base.getDay() + 7) % 7
-          base.setDate(base.getDate() + diff)
-          const dateStr = base.toISOString().slice(0, 10)
-          try {
-            await api.events.create({
-              title: p.label,
-              date: dateStr,
-              startTime: p.startTime,
-              endTime: p.endTime,
-              allDay: false,
-              schoolWide: false,
-              repeatRule: 'weekly',
-              color: 'sage',
-            } as any)
-          } catch {}
-        }
-      }
-
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch (e: any) {
-      setError(e.message || 'Save failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="card overflow-hidden">
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-6 py-5 hover:bg-ink-900/2 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <School className="w-4 h-4 text-ink-400" />
-          <h2 className="font-body font-semibold text-sm text-ink-900">School Schedule</h2>
-          {profile && profile.periods.length > 0 && (
-            <span className="font-body text-xs text-ink-400 bg-ink-900/6 px-2 py-0.5 rounded-full">
-              {profile.periods.length} period{profile.periods.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-        <ChevronDown className={`w-4 h-4 text-ink-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="border-t border-ink-900/8 px-6 py-5 space-y-5">
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 text-sage animate-spin" />
-            </div>
-          ) : (
-            <>
-              {/* School day start/end */}
-              <div>
-                <p className="font-body text-xs font-semibold text-ink-500 uppercase tracking-wide mb-3">School Day Hours</p>
-                <div className="flex items-center gap-4">
-                  <div className="flex-1">
-                    <label className="font-body text-xs text-ink-500 mb-1 block">School day starts</label>
-                    <input type="time" value={schoolDayStart}
-                      onChange={e => setSchoolDayStart(e.target.value)}
-                      className="input-field text-sm py-2 w-full" />
-                  </div>
-                  <div className="flex-1">
-                    <label className="font-body text-xs text-ink-500 mb-1 block">School day ends</label>
-                    <input type="time" value={schoolDayEnd}
-                      onChange={e => setSchoolDayEnd(e.target.value)}
-                      className="input-field text-sm py-2 w-full" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Periods list */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="font-body text-xs font-semibold text-ink-500 uppercase tracking-wide">Periods</p>
-                  <button onClick={addPeriod} className="flex items-center gap-1.5 font-body text-xs text-sage hover:text-sage-700 transition-colors">
-                    <Plus className="w-3.5 h-3.5" />Add period
-                  </button>
-                </div>
-
-                {periods.length === 0 ? (
-                  <div className="text-center py-6 border-2 border-dashed border-ink-900/10 rounded-xl">
-                    <p className="font-body text-sm text-ink-400 mb-1">No periods yet</p>
-                    <p className="font-body text-xs text-ink-300">Add periods like "Period 7/8" or "Period 3" with their times</p>
-                    <button onClick={addPeriod} className="mt-3 btn-sage py-1.5 px-4 text-xs gap-1.5">
-                      <Plus className="w-3 h-3" />Add first period
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {periods.map((p, idx) => (
-                      <div key={p.id} className="bg-ink-50/60 border border-ink-900/8 rounded-xl p-3 space-y-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-body text-[10px] text-ink-400 font-semibold uppercase tracking-wide w-4">{idx + 1}</span>
-                          <input
-                            type="text"
-                            value={p.label}
-                            onChange={e => updatePeriod(p.id, 'label', e.target.value)}
-                            placeholder="e.g. Period 7/8"
-                            className="flex-1 input-field text-sm py-1.5 font-medium"
-                          />
-                          <button onClick={() => removePeriod(p.id)} className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
-                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-2 pl-6">
-                          <div className="flex items-center gap-1.5 flex-1">
-                            <Clock className="w-3.5 h-3.5 text-ink-400 flex-shrink-0" />
-                            <input type="time" value={p.startTime}
-                              onChange={e => updatePeriod(p.id, 'startTime', e.target.value)}
-                              className="input-field text-xs py-1.5 flex-1 min-w-0" />
-                            <span className="font-body text-xs text-ink-400">–</span>
-                            <input type="time" value={p.endTime}
-                              onChange={e => updatePeriod(p.id, 'endTime', e.target.value)}
-                              className="input-field text-xs py-1.5 flex-1 min-w-0" />
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <input type="number" min={1} max={240} value={p.durationMinutes}
-                              onChange={e => updatePeriod(p.id, 'durationMinutes', parseInt(e.target.value) || 45)}
-                              className="input-field text-xs py-1.5 w-16 text-center" />
-                            <span className="font-body text-[10px] text-ink-400">min</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Summary preview */}
-              {periods.length > 0 && (
-                <div className="bg-sage/5 border border-sage/15 rounded-xl px-4 py-3">
-                  <p className="font-body text-xs font-semibold text-sage-700 mb-2">Schedule Preview</p>
-                  <div className="space-y-1">
-                    {periods.map(p => (
-                      <div key={p.id} className="flex items-center justify-between">
-                        <span className="font-body text-xs text-ink-700">{p.label}</span>
-                        <span className="font-mono text-xs text-ink-400">{fmt12(p.startTime)} – {fmt12(p.endTime)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {error && <p className="font-body text-xs text-red-600">{error}</p>}
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={handleSave} disabled={saving}
-                  className={`btn-sage py-2 px-5 text-sm gap-2 ${saving ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : saved ? <Check className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5" />}
-                  {saved ? 'Saved!' : saving ? 'Saving…' : 'Save Schedule'}
-                </button>
-              </div>
-              <p className="font-body text-[11px] text-ink-400 -mt-2">
-                This schedule syncs to your <Link href="/app/schedule" className="text-sage underline underline-offset-2">My Schedule</Link> view.
-              </p>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ─── Create Calendar Modal ─────────────────────────────────
@@ -960,6 +713,8 @@ export default function AppLandingPage() {
   const [calsLoading, setCalsLoading] = useState(true)
   const [showCreate, setShowCreate]   = useState(false)
   const [cloneSource, setCloneSource] = useState<Course | null>(null)
+  const [todayEvents, setTodayEvents] = useState<CalEvent[]>([])
+  const [eventsLoading, setEventsLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
@@ -977,12 +732,31 @@ export default function AppLandingPage() {
         } catch {}
       }
       setCalsLoading(false)
+      setEventsLoading(false)
       return
     }
     api.calendars.list()
       .then(data => setCalendars(data))
       .catch(err => console.error('Failed to load calendars:', err))
       .finally(() => setCalsLoading(false))
+  }, [user])
+
+  // Load today's events
+  useEffect(() => {
+    if (!user || user.id.startsWith('demo-')) return
+    const month = format(new Date(), 'yyyy-MM')
+    api.events.list(month)
+      .then(events => {
+        const todayStr = format(new Date(), 'yyyy-MM-dd')
+        const nowTime  = format(new Date(), 'HH:mm')
+        const upcoming = events
+          .filter(e => e.date === todayStr)
+          .filter(e => e.allDay || !e.endTime || e.endTime >= nowTime)
+          .sort((a, b) => (a.startTime || '00:00').localeCompare(b.startTime || '00:00'))
+        setTodayEvents(upcoming)
+      })
+      .catch(() => {})
+      .finally(() => setEventsLoading(false))
   }, [user])
 
   const handleSignOut = async () => {
@@ -1023,84 +797,118 @@ export default function AppLandingPage() {
   return (
     <div className="min-h-screen bg-cream-100">
       <nav className="bg-cream-100/90 border-b border-ink-900/8 backdrop-blur-md sticky top-0 z-20">
-        <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-ink-900 rounded-lg flex items-center justify-center">
               <Calendar className="w-4 h-4 text-cream-100" />
             </div>
             <span className="font-display text-lg text-ink-900">Calendar AI</span>
           </div>
-          <button onClick={handleSignOut} className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors">
-            <LogOut className="w-4 h-4" />Sign out
-          </button>
+          <div className="flex items-center gap-2">
+            <Link href="/app/profile" className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-ink-900/5">
+              <User className="w-4 h-4" />Profile
+            </Link>
+            <button onClick={handleSignOut} className="flex items-center gap-1.5 font-body text-sm text-ink-500 hover:text-ink-900 transition-colors px-3 py-1.5 rounded-lg hover:bg-ink-900/5">
+              <LogOut className="w-4 h-4" />Sign out
+            </button>
+          </div>
         </div>
       </nav>
 
-      <main className="max-w-3xl mx-auto px-6 py-12 page-enter space-y-6">
-        <div>
+      <main className="max-w-5xl mx-auto px-6 py-10 page-enter">
+        <div className="mb-8">
           <h1 className="font-display text-5xl text-ink-900 mb-1">{user?.fullName || 'My Dashboard'}</h1>
           <p className="font-body text-base text-ink-400">{user?.schoolName || ''}</p>
         </div>
 
-        <ManageScheduleSection />
+        {/* Side-by-side panels */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        <Link href="/app/schedule"
-          className="group block card overflow-hidden hover:shadow-md transition-all duration-200 hover:border-ink-900/15">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-ink-900/8">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 text-ink-400" />
-              <h2 className="font-body font-semibold text-sm text-ink-900">My Schedule</h2>
-              <span className="font-body text-xs text-ink-400 bg-ink-900/6 px-2 py-0.5 rounded-full">Full Calendar</span>
-            </div>
-            <ArrowRight className="w-4 h-4 text-ink-300 group-hover:text-ink-600 group-hover:translate-x-0.5 transition-all" />
-          </div>
-          <div className="px-6 py-4">
-            <p className="font-body text-sm text-ink-500 mb-3">All your classes, meetings, and events in one place.</p>
-            <div className="grid grid-cols-5 gap-1.5">
-              {['Mon','Tue','Wed','Thu','Fri'].map((day, i) => {
-                const todayIdx = new Date().getDay() - 1
-                return (
-                  <div key={day} className={`rounded-lg p-2 text-center ${i === todayIdx ? 'bg-sage/12' : 'bg-ink-900/3'}`}>
-                    <div className="font-body text-[10px] text-ink-400 mb-1">{day}</div>
-                    {sortedCalendars[0] && i < 4 && (
-                      <div className="text-[9px] font-body text-sage-700 bg-sage/15 rounded px-1 truncate">{sortedCalendars[0].name.split(' ')[0]}</div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        </Link>
-
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between px-6 py-5 border-b border-ink-900/8">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-ink-400" />
-              <h2 className="font-body font-semibold text-sm text-ink-900">My Calendars</h2>
-              <span className="font-mono text-xs text-ink-400 bg-ink-900/6 px-1.5 py-0.5 rounded">{calendars.length}</span>
-            </div>
-            <button onClick={() => setShowCreate(true)} className="btn-sage py-2 px-3.5 text-xs gap-1.5">
-              <Plus className="w-3.5 h-3.5" />Create Calendar
-            </button>
-          </div>
-          {calsLoading ? (
-            <div className="py-16 flex items-center justify-center"><Loader2 className="w-5 h-5 text-sage animate-spin" /></div>
-          ) : sortedCalendars.length === 0 ? (
-            <div className="py-16 flex flex-col items-center justify-center text-center px-6">
-              <div className="w-14 h-14 bg-sage/10 rounded-2xl flex items-center justify-center mb-4">
-                <Calendar className="w-6 h-6 text-sage" />
+          {/* ── My Schedule (today's events) ── */}
+          <div className="card overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-ink-900/8">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="w-4 h-4 text-ink-400" />
+                <h2 className="font-body font-semibold text-sm text-ink-900">My Schedule</h2>
+                <span className="font-body text-xs text-ink-400 bg-ink-900/6 px-2 py-0.5 rounded-full">Today</span>
               </div>
-              <p className="font-body text-base font-medium text-ink-700 mb-1">No calendars yet.</p>
-              <p className="font-body text-sm text-ink-400 mb-6">Create your first course calendar to get started.</p>
-              <button onClick={() => setShowCreate(true)} className="btn-sage gap-1.5">
-                <Plus className="w-4 h-4" />Create your first calendar
+              <Link href="/app/schedule" className="font-body text-xs text-sage hover:text-sage-700 transition-colors flex items-center gap-1">
+                Full calendar <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+            <div className="flex-1 px-6 py-4">
+              {eventsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-4 h-4 text-sage animate-spin" />
+                </div>
+              ) : todayEvents.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="font-body text-sm text-ink-400 mb-1">No upcoming events today</p>
+                  <Link href="/app/schedule" className="font-body text-xs text-sage hover:underline">
+                    View full schedule →
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {todayEvents.map(ev => (
+                    <div key={ev.id} className="flex items-center gap-3 py-2 border-b border-ink-900/5 last:border-0">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        ev.color === 'amber' ? 'bg-amber-400' :
+                        ev.color === 'blue'  ? 'bg-blue-500'  :
+                        ev.color === 'purple'? 'bg-purple-500':
+                        ev.color === 'red'   ? 'bg-red-500'   : 'bg-sage'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-body text-sm text-ink-900 truncate">{ev.title}</p>
+                        {!ev.allDay && ev.startTime && (
+                          <p className="font-body text-xs text-ink-400">
+                            {fmt12(ev.startTime)}{ev.endTime ? ` – ${fmt12(ev.endTime)}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── My Calendars ── */}
+          <div className="card overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-ink-900/8">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-ink-400" />
+                <h2 className="font-body font-semibold text-sm text-ink-900">My Calendars</h2>
+                <span className="font-mono text-xs text-ink-400 bg-ink-900/6 px-1.5 py-0.5 rounded">{calendars.length}</span>
+              </div>
+              <button onClick={() => setShowCreate(true)} className="btn-sage py-1.5 px-3 text-xs gap-1.5">
+                <Plus className="w-3.5 h-3.5" />Create
               </button>
             </div>
-          ) : (
-            <div className="p-4 space-y-2">
-              {sortedCalendars.map(cal => <CalendarCard key={cal.id} cal={cal} onDelete={handleDelete} onClone={setCloneSource} />)}
-            </div>
-          )}
+            {calsLoading ? (
+              <div className="py-16 flex items-center justify-center">
+                <Loader2 className="w-5 h-5 text-sage animate-spin" />
+              </div>
+            ) : sortedCalendars.length === 0 ? (
+              <div className="py-12 flex flex-col items-center justify-center text-center px-6">
+                <div className="w-12 h-12 bg-sage/10 rounded-2xl flex items-center justify-center mb-3">
+                  <Calendar className="w-5 h-5 text-sage" />
+                </div>
+                <p className="font-body text-sm font-medium text-ink-700 mb-1">No calendars yet.</p>
+                <p className="font-body text-xs text-ink-400 mb-4">Create your first course calendar.</p>
+                <button onClick={() => setShowCreate(true)} className="btn-sage gap-1.5 text-sm py-2">
+                  <Plus className="w-3.5 h-3.5" />Create calendar
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {sortedCalendars.map(cal => (
+                  <CalendarCard key={cal.id} cal={cal} onDelete={handleDelete} onClone={setCloneSource} />
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
       </main>
 
