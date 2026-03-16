@@ -125,28 +125,28 @@ function HeroDemo() {
 // ─── Testimonials ────────────────────────────────────
 const testimonials = [
   {
-    name: 'Sarah Chen',
-    role: 'AP Physics Teacher, Lincoln High',
+    name: 'Sarah C.',
+    role: 'AP Physics Teacher',
     stars: 5,
-    text: 'I used to spend Sunday afternoons planning the whole week. Now I upload my syllabus at the start of the semester and Calendar AI handles the scaffolding. Game changer.',
+    text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation.',
   },
   {
-    name: 'Marcus Williams',
-    role: 'English Department Head, Westview Academy',
+    name: 'Marcus W.',
+    role: 'English Department Head',
     stars: 5,
-    text: 'The AI actually understands constraints — it never scheduled a big essay due the week before winter break. It\'s like it thinks like a teacher.',
+    text: 'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident sunt in culpa.',
   },
   {
-    name: 'Priya Sharma',
-    role: 'Calculus BC, Northfield School',
+    name: 'Priya S.',
+    role: 'Calculus Teacher',
     stars: 5,
-    text: 'I teach 5 sections. Calendar AI keeps them all organized. When I need to adjust one section, I just tell it and it replans accordingly.',
+    text: 'Ut enim ad minima veniam, quis nostrum exercitationem ullam corporis suscipit laboriosam. Nemo enim ipsam voluptatem quia voluptas sit aspernatur aut odit aut fugit.',
   },
   {
-    name: 'Tom Okafor',
-    role: 'History Teacher, Riverside Prep',
+    name: 'Tom O.',
+    role: 'History Teacher',
     stars: 5,
-    text: 'The monthly view gives me a bird\'s-eye view of the whole semester. I can see assessment clumps before they happen and ask AI to spread things out.',
+    text: 'Neque porro quisquam est, qui dolorem ipsum quia dolor sit amet consectetur adipisci velit. Sed quia non numquam eius modi tempora incidunt labore et dolore magnam.',
   },
 ];
 
