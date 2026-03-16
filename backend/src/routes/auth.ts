@@ -203,6 +203,7 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       specialDays    = rawPeriods.special  || []
     }
     const timezone = rawPeriods?._v === 2 ? (rawPeriods.timezone || 'America/New_York') : 'America/New_York'
+    const schoolYear = rawPeriods?._v === 2 ? (rawPeriods.schoolYear || '2025–2026') : '2025–2026'
     res.json({
       id: user.id,
       email: user.email,
@@ -214,6 +215,7 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       periods: regularPeriods,
       specialDays,
       timezone,
+      schoolYear,
     })
   } catch (err) {
     console.error('Profile get error:', err)
@@ -225,7 +227,7 @@ router.get('/profile', authenticate, async (req: AuthRequest, res: Response) => 
 // Updates user profile settings including periods
 router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { fullName, schoolName, schoolDayStart, schoolDayEnd, periods, specialDays, timezone } = req.body
+    const { fullName, schoolName, schoolDayStart, schoolDayEnd, periods, specialDays, timezone, schoolYear } = req.body
 
     // Validate periods array structure
     if (periods !== undefined && !Array.isArray(periods)) {
@@ -244,7 +246,8 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       const newRegular = periods    !== undefined ? periods    : curRegular
       const newSpecial = specialDays !== undefined ? specialDays : curSpecial
       const newTz      = timezone   !== undefined ? timezone   : curTz
-      periodsPayload = JSON.stringify({ _v: 2, regular: newRegular, special: newSpecial, timezone: newTz })
+      const newSY      = schoolYear  !== undefined ? schoolYear  : (Array.isArray(raw) ? '2025–2026' : (raw?._v === 2 ? raw.schoolYear || '2025–2026' : '2025–2026'))
+      periodsPayload = JSON.stringify({ _v: 2, regular: newRegular, special: newSpecial, timezone: newTz, schoolYear: newSY })
     }
 
     const result = await db.query(
@@ -282,6 +285,7 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       retSpecial = rawPeriods2.special  || []
     }
     const retTz = rawPeriods2?._v === 2 ? (rawPeriods2.timezone || 'America/New_York') : 'America/New_York'
+    const retSY = rawPeriods2?._v === 2 ? (rawPeriods2.schoolYear || '2025–2026') : '2025–2026'
     res.json({
       id: user.id,
       email: user.email,
@@ -293,6 +297,7 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
       periods: retRegular,
       specialDays: retSpecial,
       timezone: retTz,
+      schoolYear: retSY,
     })
   } catch (err) {
     console.error('Profile update error:', err)

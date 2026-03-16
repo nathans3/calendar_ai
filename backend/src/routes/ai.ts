@@ -556,62 +556,54 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
 Today: ${todayStr} (${nowEST})
 ${selectedDate ? `Selected date: ${selectedDate}` : ''}${eventsContextStr}${calContextStr}
 
+CRITICAL — ACTION FIRST:
+- ALWAYS call the appropriate tool immediately. Do NOT describe what you are about to do — just do it.
+- Only respond in text AFTER the tool call to confirm what was done.
+
 Your job:
-- Add, delete, and reschedule events directly using the provided tools
-- addEvent: create a new event (always call this when teacher wants to add something)
+- addEvent: create a new event — call this IMMEDIATELY whenever the teacher wants to add something
 - deleteEvent: permanently remove an event — use the [ID:...] from the events list above
-- moveEvent: reschedule an event to a new date/time — use the [ID:...] from the events list above
-- Always confirm what you did: "Added X on Y at Z" / "Deleted X" / "Moved X to Y at Z"
-- When suggesting a move or delete, briefly explain why (e.g. "since you have a conflict at 10am")
+- moveEvent: reschedule an event — use the [ID:...] from the events list above
+- After calling a tool, confirm in one sentence: "Added X on Y at Z" / "Deleted X" / "Moved X to Y"
 - Be concise and action-oriented`
       : `You are an expert AI assistant for a teacher's course planning calendar.
 Course: "${course.name}" (${course.period})
 Today: ${todayStr} (${nowEST})
 ${selectedDate ? `Selected date: ${selectedDate}` : ''}${ragContext}${calContextStr}
 
-Your job:
-- Help the teacher plan lessons, schedule assessments, and optimize semester pacing
-- Use tools to propose changes. Before calling a tool, briefly explain your reasoning (1 sentence).
-- After calling tools, summarize what you did and why.
+CRITICAL — ACT IMMEDIATELY:
+- When the teacher asks you to add, create, update, move, delete, or change ANYTHING on the calendar — call the tool RIGHT AWAY.
+- Do NOT write text saying "I'll add..." or "I'll schedule..." or "Here's the lesson plan:" — call the tool and let the calendar show the change.
+- Do NOT include the lesson content in your text response — put it in the tool call only.
+- Only write a brief confirmation AFTER calling the tool (e.g. "Added the quiz to March 20." or "Moved the test to Wednesday.").
+- If the teacher's request is ambiguous about the date, use your best judgment and act — do not ask for clarification unless truly impossible to infer.
+- Saturday (day 6) and Sunday (day 0) are NEVER valid lesson dates — never call createLesson, insertAssessment, or moveLesson for a weekend date.
 
 TOOLS AVAILABLE:
-- createLesson: add or update content on a date
+- createLesson: add or update content on a date — use for any "add", "create", "update", "make more detailed", "change the lesson" request
 - insertAssessment: schedule a quiz/test/exam on a date
-- moveLesson: move content FROM one date TO another (clears source, populates destination)
+- moveLesson: move content FROM one date TO another
 - deleteLesson: remove content from a date entirely
-- markDay: mark a date with a label — ALWAYS use this when teacher mentions a day off, closure, or cancellation. Use the EXACT reason the teacher gave (e.g. "No School", "Professional Development", "Field Trip"). Never default to "Snow Day" unless the teacher said snow day.
+- markDay: mark a date with a label (No School, etc.)
 - clearDay: wipe everything from a date
 
 RULES FOR MOVES AND DELETIONS:
-- When asked to move something, ALWAYS use moveLesson — it handles both clearing the old date AND populating the new one atomically
-- When suggesting a move on your own, explain WHY the new date is better (e.g. "Moving the test to Wednesday gives students an extra review day")
-- When something should be deleted rather than moved, use deleteLesson and explain why
-- Never just say "moved to X" — actually call the tool so the change appears on the calendar
-- Space out assessments — do not move a test to a date that already has one
-- NEVER reschedule TO a date marked [NOTE: ...] — those are blocked days (snow days, no school, etc.)
+- When asked to move something, ALWAYS use moveLesson
+- NEVER reschedule TO a closed/blocked day
+- Space out assessments — do not put a test on a date that already has one
+- Never schedule assessments on Mondays unless explicitly asked
 
 SCHOOL CLOSURES AND DAYS OFF:
-- When a teacher mentions any day that school is off, closed, or unavailable:
-  1. Call markDay with clearContent=true to label and block the date. Use the EXACT reason the teacher gave as the label — do NOT default to "Snow Day" unless they explicitly said snow day.
-  2. Call moveLesson to move displaced content to the NEXT available open (non-closed) school day — pass closureReason matching the markDay label so the source date is stamped as closed
-  3. NEVER move content to another closed/blocked day — skip past holidays, weekends, and other closures
-- The markDay label must reflect what the teacher actually said: "No School", "Holiday", "Professional Development Day", "Field Trip", "Teacher Work Day", etc.
-- After marking a closed day, always check if any lesson/assessment was on that date and proactively move it
-- If the teacher asks to reschedule a day's events without specifying a target: suggest the next open school day, show the suggestion as a pending moveLesson, and wait for the teacher to accept
+- When a teacher mentions any day off: call markDay with clearContent=true, then moveLesson for displaced content
+- Use the EXACT reason the teacher gave (not "Snow Day" unless they said snow day)
+- NEVER move content to another closed/blocked day
 
-PRIORITY TIERS (when deciding what to move, keep, or delete):
-- Tier 1 Critical: Finals, state exams, major projects — NEVER move without explicit request
-- Tier 2 High: Unit tests, essays, major assessments — move only when necessary, explain why
-- Tier 3 Medium: Quizzes, milestones, chapter reviews — can be rescheduled with good reason
-- Tier 4 Standard: Regular lessons, classwork — freely reschedulable
-- Tier 5 Low: Homework, warm-ups, notes — lowest priority, can be deleted if needed
-
-Rules:
-- Never start a new unit the week before a major break or exam
-- Never schedule major assessments on Mondays unless explicitly requested
-- Space out assessments — avoid back-to-back test days
-- Respect existing content unless teacher asks to change it
-- When rescheduling, always prefer moving lower-priority items to protect higher-priority ones`
+PRIORITY TIERS:
+- Tier 1: Finals, state exams — NEVER move without explicit request
+- Tier 2: Unit tests, essays — move only when necessary
+- Tier 3: Quizzes, chapter reviews — reschedulable with good reason
+- Tier 4: Regular lessons — freely reschedulable
+- Tier 5: Homework, warm-ups — lowest priority`
 
     const safeHistory = sanitizeHistory(Array.isArray(conversationHistory) ? conversationHistory : [])
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
@@ -620,8 +612,15 @@ Rules:
       { role: 'user', content: message },
     ]
 
+    // Detect if the message is action-oriented (add/update/move/delete/schedule/make/create)
+    // vs purely conversational/analytical. For action requests: force tool use ('required').
+    // For questions/analysis: allow text-only ('auto').
+    const actionKeywords = /\b(add|create|make|schedule|insert|update|change|edit|modify|move|reschedule|delete|remove|clear|mark|set|put|write|fill|generate|redo|undo|replace|swap|fix|improve|expand|shorten|detail|revise|push|shift|bump)\b/i
+    const isActionRequest = actionKeywords.test(message)
+    const chosenToolChoice: OpenAI.Chat.ChatCompletionToolChoiceOption = isActionRequest ? 'required' : 'auto'
+
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini', messages, tools: AI_TOOLS, tool_choice: 'auto', max_tokens: 1500,
+      model: 'gpt-4o-mini', messages, tools: AI_TOOLS, tool_choice: chosenToolChoice, max_tokens: 1500,
     })
 
     const responseMessage = completion.choices[0].message
@@ -726,6 +725,12 @@ Rules:
               console.warn(`[AI] Blocked moveLesson to closed day ${args.toDate} (${reason})`)
               continue
             }
+            // Block move if destination is a weekend
+            const isWeekendDst = (ds: string) => { const d = new Date(ds + 'T12:00:00Z').getUTCDay(); return d === 0 || d === 6 }
+            if (isWeekendDst(args.toDate)) {
+              console.warn(`[AI] Blocked moveLesson to weekend ${args.toDate}`)
+              continue
+            }
             // Propose as PENDING suggestions — fetch current content from calendarContext
             // (no DB writes here; user accepts/declines on the calendar)
             const ctxSrc = (calendarContext as any)?.[args.fromDate] || {}
@@ -766,6 +771,15 @@ Rules:
               const reason = (calendarContext as any)?.[args.date]?.notes || 'closed day'
               console.warn(`[AI] Blocked ${call.function.name} on closed day ${args.date} (${reason})`)
               // Don't add a diff — skip silently so the AI's text response still shows
+              continue
+            }
+            // ── Weekend guard ─────────────────────────────────
+            const isWeekend = (ds: string) => { const d = new Date(ds + 'T12:00:00Z').getUTCDay(); return d === 0 || d === 6 }
+            if (
+              (call.function.name === 'createLesson' || call.function.name === 'insertAssessment') &&
+              isWeekend(args.date)
+            ) {
+              console.warn(`[AI] Blocked ${call.function.name} on weekend ${args.date}`)
               continue
             }
             allDiffs.push(...buildDiff(call.function.name, args, calendarContext || {}))
@@ -887,6 +901,88 @@ Respond with ONLY the JSON array, no explanation, no markdown.`,
   return excluded
 }
 
+// Extract the last day of school from the school calendar text.
+// Returns a YYYY-MM-DD string, or null if not found.
+async function extractLastDayOfSchool(
+  openaiClient: OpenAI,
+  contextText: string,
+  startDate: string,
+  endDate: string
+): Promise<string | null> {
+  if (!contextText.trim()) return null
+  try {
+    const completion = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 100,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a date parser. Find the last day of school (last instructional day, last day of classes, last student day, end of school year) from the provided text.
+Return ONLY a single YYYY-MM-DD date string. Only include dates between ${startDate} and ${endDate}.
+If not found, return null.
+Respond with ONLY the date string or the word null.`,
+        },
+        { role: 'user', content: contextText.slice(0, 6000) },
+      ],
+    })
+    const raw = (completion.choices[0].message.content || '').trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      console.log(`[generate-calendar] Last day of school extracted: ${raw}`)
+      return raw
+    }
+    return null
+  } catch (e: any) {
+    console.warn('Last day extraction failed (non-fatal):', e.message)
+    return null
+  }
+}
+
+// Extract single-session / early-dismissal / modified-schedule days from the school calendar.
+// These are INSTRUCTIONAL days with a different schedule — NOT holidays or no-school days.
+// Returns array of { date, label } objects.
+async function extractSingleSessionDays(
+  openaiClient: OpenAI,
+  contextText: string,
+  startDate: string,
+  endDate: string
+): Promise<Array<{ date: string; label: string }>> {
+  if (!contextText.trim()) return []
+  try {
+    const completion = await openaiClient.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 600,
+      temperature: 0,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a school calendar parser. Find all single-session days, early dismissal days, half days, and modified-schedule days from the provided text.
+IMPORTANT: These are days where school IS in session but with a shortened or modified schedule — NOT holidays or no-school days.
+Return ONLY a JSON array of objects with shape { "date": "YYYY-MM-DD", "label": "Single Session" | "Early Dismissal" | "Half Day" | exact label from text }.
+Only include dates between ${startDate} and ${endDate}.
+If none found, return [].
+Respond with ONLY the JSON array, no explanation, no markdown.`,
+        },
+        { role: 'user', content: contextText.slice(0, 6000) },
+      ],
+    })
+    const raw = (completion.choices[0].message.content || '').trim()
+    const clean = raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim()
+    const parsed = JSON.parse(clean)
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter((e: any) =>
+        e && typeof e.date === 'string' && typeof e.label === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date)
+      )
+      console.log(`[generate-calendar] Extracted ${valid.length} single-session/early-dismissal days`)
+      return valid
+    }
+    return []
+  } catch (e: any) {
+    console.warn('Single session day extraction failed (non-fatal):', e.message)
+    return []
+  }
+}
+
 // Ask the AI to extract key school events (conferences, spirit week, back to school night, etc.)
 // from the school calendar section. Returns an array of { date, label } objects.
 async function extractKeyDatesFromContext(
@@ -1000,15 +1096,23 @@ router.post('/generate-calendar', async (req: AuthRequest, res: Response) => {
     const allRulesText = [teacherInstructions, requirementsText].filter(Boolean).join('\n')
 
     // Extract holidays ONLY from the school calendar section
-    const [holidays, keyDates] = schoolCalText.trim()
+    const [holidays, keyDates, lastDayOfSchool, singleSessionDays] = schoolCalText.trim()
       ? await Promise.all([
           extractHolidaysFromContext(openai, schoolCalText, planStartDate, rangeEnd),
           extractKeyDatesFromContext(openai, schoolCalText, planStartDate, rangeEnd),
+          extractLastDayOfSchool(openai, schoolCalText, planStartDate, rangeEnd),
+          extractSingleSessionDays(openai, schoolCalText, planStartDate, rangeEnd),
         ])
-      : [new Set<string>(), [] as Array<{ date: string; label: string }>]
+      : [new Set<string>(), [] as Array<{ date: string; label: string }>, null as string | null, [] as Array<{ date: string; label: string }>]
 
-    // Build final school day list excluding holidays
-    const allSchoolDays = getSchoolDays(planStartDate, rangeEnd).filter(d => !holidays.has(d))
+    // Hard cutoff: if we found a last day of school, never plan beyond it
+    const hardEndDate = lastDayOfSchool && lastDayOfSchool < rangeEnd ? lastDayOfSchool : rangeEnd
+    if (lastDayOfSchool) {
+      console.log(`[generate-calendar] Hard end date (last day of school): ${hardEndDate}`)
+    }
+
+    // Build final school day list excluding holidays, capped at last day of school
+    const allSchoolDays = getSchoolDays(planStartDate, hardEndDate).filter(d => !holidays.has(d))
     const cappedDays = allSchoolDays.slice(0, cap)
 
     console.log(`[generate-calendar] start=${planStartDate}, cap=${cap}, allSchoolDays=${allSchoolDays.length}, holidays=${holidays.size}, cappedDays=${cappedDays.length}, range=${planStartDate}→${rangeEnd}`)
@@ -1114,6 +1218,12 @@ ${combinedRules}
         keyDates.map(kd => `  • ${kd.date}: ${kd.label}`).join('\n')
       : ''
 
+    // Single session / early dismissal days block
+    const singleSessionBlock = singleSessionDays.length > 0
+      ? `\nSINGLE SESSION / EARLY DISMISSAL DAYS (school IS in session, but shorter — plan accordingly, lighter content):\n` +
+        singleSessionDays.map(s => `  • ${s.date}: ${s.label}`).join('\n')
+      : ''
+
     const systemPrompt = `You are an expert curriculum planner. Create a detailed, specific lesson plan for every date you receive.
 ${
   teacherRulesBlock ? `\n${teacherRulesBlock}\n` : ''
@@ -1124,7 +1234,7 @@ ${
   courseContextBlock ? `\nCOURSE CONTEXT:\n${courseContextBlock}` : ''
 }${
   ragBlock ? `\n\n${ragBlock}` : ''
-}${keyDatesBlock}
+}${keyDatesBlock}${singleSessionBlock}
 
 CRITICAL RULES — follow every one without exception:
 1. Call createLesson for EVERY SINGLE date you are given. Zero exceptions. Do not skip any date.

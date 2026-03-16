@@ -751,13 +751,14 @@ function DayColumn({ day, data, focused, dayPending, applying, onFocus, onClose,
 }
 
 // ─── Weekly View ──────────────────────────────────────────
-function WeeklyView({ currentDate, dayData, pendingChanges, applying, onDayDataChange, onAcceptChange, onDeclineChange, onRescheduleRequest, onDragMove }: {
+function WeeklyView({ currentDate, dayData, pendingChanges, applying, onDayDataChange, onAcceptChange, onDeclineChange, onRescheduleRequest, onDragMove, onFocusedDateChange }: {
   currentDate: Date; dayData: Record<string, DayData>
   pendingChanges: AIChange[]; applying: string | null
   onDayDataChange: (dateStr: string, field: keyof DayData, value: string | PriorityTier) => void
   onAcceptChange: (id: string) => void; onDeclineChange: (id: string) => void
   onRescheduleRequest?: (dateStr: string, reason: string) => void
   onDragMove: (fromDs: string, toDs: string) => void
+  onFocusedDateChange?: (ds: string | null) => void
 }) {
   const [focusedDate, setFocusedDate] = useState<string | null>(null)
   const [toolbarVisible, setToolbarVisible] = useState(false)
@@ -767,7 +768,7 @@ function WeeklyView({ currentDate, dayData, pendingChanges, applying, onDayDataC
   const days = Array.from({ length: 5 }, (_, i) => { const d = new Date(weekStart); d.setDate(d.getDate() + i); return d })
 
   useEffect(() => {
-    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') { setFocusedDate(null); setToolbarVisible(false) } }
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') { setFocusedDate(null); setToolbarVisible(false); onFocusedDateChange?.(null) } }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
   }, [])
 
@@ -828,8 +829,8 @@ function WeeklyView({ currentDate, dayData, pendingChanges, applying, onDayDataC
               <DayColumn key={ds} day={day} data={data} focused={isFocused}
                 dayPending={pendingChanges.filter(c => c.date === ds)}
                 applying={applying}
-                onFocus={() => setFocusedDate(ds)}
-                onClose={() => { setFocusedDate(null); setToolbarVisible(false) }}
+                onFocus={() => { setFocusedDate(ds); onFocusedDateChange?.(ds) }}
+                onClose={() => { setFocusedDate(null); setToolbarVisible(false); onFocusedDateChange?.(null) }}
                 onChange={(field, value) => onDayDataChange(ds, field, value)}
                 onFieldFocus={() => setToolbarVisible(true)}
                 onAcceptChange={onAcceptChange}
@@ -1734,7 +1735,8 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
                 onAcceptChange={handleAcceptFromCell}
                 onDeclineChange={handleDeclineFromCell}
                 onRescheduleRequest={handleRescheduleRequest}
-                onDragMove={handleDragMove} />}
+                onDragMove={handleDragMove}
+                onFocusedDateChange={(ds) => { if (ds) setSelectedDate(new Date(ds + 'T12:00:00')) }} />}
         </div>
         {/* Sidebar toggle — now handled by AI button in TopNav */}
         {aiOpen && (

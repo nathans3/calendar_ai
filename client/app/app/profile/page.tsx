@@ -156,6 +156,7 @@ export default function ProfilePage() {
   // Account
   const [fullName,       setFullName]       = useState('')
   const [schoolName,     setSchoolName]     = useState('')
+  const [schoolYear,     setSchoolYear]     = useState('2025–2026')
   const [timezone,       setTimezone]       = useState('America/New_York')
 
   // Regular schedule
@@ -182,6 +183,7 @@ export default function ProfilePage() {
         setSchoolDayEnd(p.schoolDayEnd || '15:00')
         setPeriods(p.periods || [])
         setTimezone((p as any).timezone || 'America/New_York')
+        setSchoolYear((p as any).schoolYear || '2025–2026')
         const ext = (p as any).specialDays
         if (ext && Array.isArray(ext)) setSpecialDays(ext)
         setIsDirty(false)
@@ -239,8 +241,9 @@ export default function ProfilePage() {
     try {
       await api.profile.update({
         fullName, schoolName, schoolDayStart, schoolDayEnd, periods, timezone,
+        schoolYear,
         ...(specialDays.length > 0 ? { specialDays } as any : {}),
-      })
+      } as any)
       setSaved(true)
       setIsDirty(false)
       setTimeout(() => setSaved(false), 2500)
@@ -358,6 +361,14 @@ export default function ProfilePage() {
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Email</label>
               <input type="email" value={profile?.email || ''} disabled
                 className="input-field w-full opacity-50 cursor-not-allowed" />
+            </div>
+            <div>
+              <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">School Year</label>
+              <select value={schoolYear} onChange={e => { setSchoolYear(e.target.value); setIsDirty(true) }} className="input-field w-full">
+                {['2023–2024','2024–2025','2025–2026','2026–2027','2027–2028'].map(yr => (
+                  <option key={yr} value={yr}>{yr}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="font-body text-xs text-ink-500 mb-1.5 block font-semibold uppercase tracking-wide">Time Zone</label>
