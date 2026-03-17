@@ -267,7 +267,7 @@ export default function HomePage() {
       {/* ── Feature strip ────────────────────── */}
       <section className="py-5 bg-ink-900">
         <div className="max-w-6xl mx-auto px-6">
-          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+          <div className="flex flex-nowrap items-center justify-center gap-x-5 overflow-x-auto scrollbar-none">
             {[
               'AI lesson planning',
               'Drag & reflow days',
@@ -276,8 +276,8 @@ export default function HomePage() {
               'Smart constraint awareness',
               'Accept / decline changes',
             ].map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-cream-300">
-                {i > 0 && <div className="w-px h-3 bg-white/15 mr-2 hidden sm:block" />}
+              <div key={i} className="flex items-center gap-2 text-cream-300 flex-shrink-0">
+                {i > 0 && <div className="w-px h-3 bg-white/15 mr-1 flex-shrink-0" />}
                 <div className="w-1 h-1 rounded-full bg-sage flex-shrink-0" />
                 <span className="font-body text-sm whitespace-nowrap">{f}</span>
               </div>
