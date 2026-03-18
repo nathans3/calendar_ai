@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Calendar, ChevronLeft, ChevronRight, Home, Plus, X,
   Clock, MapPin, AlignLeft, Repeat, ArrowLeft, ArrowRight, Loader2,
@@ -721,7 +722,7 @@ function FullWeekView({ currentDate, events, onCellClick, onEventClick, onDragMo
                       onClick={() => onEventClick(ev)}
                       title={isPeriod ? ev.title : undefined}
                       className={`absolute left-0.5 right-0.5 rounded-lg px-1.5 py-1 overflow-hidden z-10 transition-opacity
-                        ${isPeriod ? 'cursor-default opacity-70 pointer-events-none' : 'cursor-grab active:cursor-grabbing hover:brightness-95'}
+                        ${isPeriod ? 'cursor-pointer opacity-80 hover:opacity-100 hover:brightness-95' : 'cursor-grab active:cursor-grabbing hover:brightness-95'}
                         ${isDragging ? 'opacity-30' : ''}
                         ${ev.color === 'sage'   ? 'bg-sage/20 border-l-2 border-sage'         : ''}
                         ${ev.color === 'blue'   ? 'bg-blue-50 border-l-2 border-blue-400'     : ''}
@@ -750,6 +751,7 @@ export default function SchedulePage() {
   const [calView, setCalView]         = useState<CalView>('week')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [events, setEvents]           = useState<LocalEvent[]>([])
+  const router = useRouter()
   const [periodBlocks, setPeriodBlocks] = useState<LocalEvent[]>([])
   const [eventsLoading, setEventsLoading] = useState(true)
   const [createModal, setCreateModal] = useState<{ date: string; hour: number } | null>(null)
@@ -766,13 +768,22 @@ export default function SchedulePage() {
   }, [events])
 
   // Load bell-schedule periods from profile and generate period blocks for the visible month
+  // Only include periods that have a matching course calendar (matched by period label)
   useEffect(() => {
     if (!user || isDemo) return
-    api.profile.get()
-      .then(profile => {
+    Promise.all([api.profile.get(), api.calendars.list()])
+      .then(([profile, calendars]) => {
         const periods = profile.periods || []
         if (periods.length === 0) return
-        // Generate a block for each weekday in ±2 months of current date
+        // Build a map from period label → calendar id
+        const periodToCalId: Record<string, string> = {}
+        ;(calendars as any[]).forEach((cal: any) => {
+          if (cal.period) periodToCalId[cal.period.trim()] = cal.id
+        })
+        // Only keep periods that have a matching calendar
+        const linkedPeriods = periods.filter(p => periodToCalId[p.label.trim()])
+        if (linkedPeriods.length === 0) return
+        // Generate a block for each weekday in current month
         const monthStart = startOfMonth(currentDate)
         const monthEnd   = endOfMonth(currentDate)
         const blocks: LocalEvent[] = []
@@ -781,7 +792,7 @@ export default function SchedulePage() {
           const dow = day.getDay() // 0=Sun,6=Sat
           if (dow >= 1 && dow <= 5) { // Mon–Fri only
             const ds = format(day, 'yyyy-MM-dd')
-            periods.forEach(p => {
+            linkedPeriods.forEach(p => {
               blocks.push({
                 id: `period__${ds}__${p.id}`,
                 title: p.label,
@@ -793,6 +804,7 @@ export default function SchedulePage() {
                 color: 'sage',
                 repeatRule: 'weekly',
                 isPeriodBlock: true,
+                calendarId: periodToCalId[p.label.trim()],
               })
             })
           }
@@ -953,7 +965,10 @@ export default function SchedulePage() {
             closedDates={closedDates}
             onCellClick={(date, hour) => setCreateModal({ date, hour })}
             onEventClick={ev => {
-              if (ev.isPeriodBlock) return // period blocks are read-only, no modal
+              if (ev.isPeriodBlock) {
+                if (ev.calendarId) router.push(`/app/calendar/${ev.calendarId}`)
+                return
+              }
               setViewEvent(ev)
             }}
             onDragMove={handleDragMove} />
