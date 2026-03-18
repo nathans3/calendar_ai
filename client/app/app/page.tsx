@@ -40,7 +40,8 @@ const DURATION_OPTIONS = [
   { value: 10,  label: '2 Weeks',         detail: '~10 school days' },
   { value: 22,  label: '1 Month',         detail: '~22 school days — recommended' },
   { value: 45,  label: '1 Marking Period',detail: '~45 school days' },
-  { value: 90,  label: 'Full Semester',   detail: '~90 school days — takes 1–3 min', warn: true },
+  { value: 90,  label: '1 Semester',      detail: '~90 school days — takes 1–3 min', warn: true },
+  { value: 180, label: 'Full Year',       detail: '~180 school days — full school year', warn: true },
 ]
 
 interface DocField {
@@ -223,8 +224,7 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
     ai.requirementsText || ai.reqFile ||
     ai.additionalInfo
   )
-  const aiModeRequiresSchoolCal = ai.startDateMode === 'ai' && !(ai.schoolCalText.trim() || ai.schoolCalFile)
-  const canGenerate = hasAnyContent && !aiModeRequiresSchoolCal
+  const canGenerate = hasAnyContent
 
   const handleCreateEmpty = async () => {
     setGenStatus({ phase: 'creating' })
@@ -592,11 +592,6 @@ function CreateCalendarModal({ onClose, onCreated, takenPeriods }: {
                 {!hasAnyContent && (
                   <p className="font-body text-xs text-ink-400 text-center -mt-2">
                     Add at least one document or description to enable AI generation.
-                  </p>
-                )}
-                {hasAnyContent && aiModeRequiresSchoolCal && (
-                  <p className="font-body text-xs text-red-500 text-center -mt-2">
-                    “Let AI decide” requires a School Calendar / Key Dates — add it above to continue.
                   </p>
                 )}
               </>

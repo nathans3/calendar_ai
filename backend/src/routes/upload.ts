@@ -137,7 +137,7 @@ router.get('/documents/:courseId', async (req: AuthRequest, res: Response) => {
 
     const result = await db.query(
       `SELECT type, filename, COUNT(*) as chunks, MAX(created_at) as uploaded_at
-       FROM documents WHERE course_id=$1 GROUP BY type, filename ORDER BY type`,
+       FROM documents WHERE course_id=$1 AND type != 'ai_setup' GROUP BY type, filename ORDER BY type`,
       [courseId]
     )
     res.json(result.rows)

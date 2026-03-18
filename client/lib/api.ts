@@ -127,6 +127,9 @@ export interface LessonData {
   assessments: string
   hw: string
   notes: string
+  dayType?: 'no_school' | 'modified' | 'note' | null
+  modifiedType?: 'half_day' | 'late_arrival' | 'early_dismissal' | 'other' | null
+  dayLabel?: string
 }
 
 export interface CalEvent {

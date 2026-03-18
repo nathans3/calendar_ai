@@ -8,7 +8,7 @@ import {
   Home, List, ListOrdered, Palette, CalendarDays,
   Clock, Download, Check, Loader2, WifiOff,
   RotateCcw, CheckCheck, PanelRightClose, PanelRightOpen,
-  Upload, FileText, Trash2, ChevronDown, Paperclip, Send
+  Upload, FileText, Trash2, ChevronDown, Paperclip, Send, Flag
 } from 'lucide-react'
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
@@ -71,7 +71,10 @@ interface DayData {
   milestones: string
   assessments: string
   hw: string
-  notes: string           // special day notes: "❄ Snow Day", "No School", etc.
+  notes: string           // legacy / kept for AI markDay compat — use dayType instead
+  dayType?: 'no_school' | 'modified' | 'note' | null
+  modifiedType?: 'half_day' | 'late_arrival' | 'early_dismissal' | 'other' | null
+  dayLabel?: string       // label for the day type (e.g. "Snow Day", "Half Day")
   priority?: PriorityTier  // overall day priority (highest of any field)
 }
 
@@ -184,7 +187,7 @@ function ExportModal({ calendarName, period, dayData, onClose }: {
 
   const allDates = Object.keys(dayData).filter(d => {
     const d2 = dayData[d]
-    return d2.lessonPlan || d2.assessments || d2.hw || d2.milestones || d2.deadlines || d2.notes
+    return d2.lessonPlan || d2.assessments || d2.hw || d2.milestones || d2.deadlines || d2.notes || d2.dayType
   }).sort()
 
   const getRange = () => {
@@ -211,7 +214,9 @@ function ExportModal({ calendarName, period, dayData, onClose }: {
     const filtered = allDates.filter(d => d >= start && d <= end)
     const rows = filtered.map(ds => {
       const d = dayData[ds]
-      if (d.notes) return `<div class="day closed"><div class="day-header">${format(parseISO(ds), 'EEEE, MMMM d, yyyy')}</div><div class="closed-label">${d.notes}</div></div>`
+      const eDayType  = d.dayType ?? (d.notes ? 'no_school' : null)
+      const eDayLabel = d.dayLabel || d.notes || ''
+      if (eDayType === 'no_school') return `<div class="day closed"><div class="day-header">${format(parseISO(ds), 'EEEE, MMMM d, yyyy')}</div><div class="closed-label">${eDayLabel || 'No School'}</div></div>`
       return `<div class="day"><div class="day-header">${format(parseISO(ds), 'EEEE, MMMM d, yyyy')}</div>
         ${d.milestones  ? `<div class="lbl">MILESTONE</div><div class="val ms">${d.milestones}</div>` : ''}
         ${d.lessonPlan  ? `<div class="lbl">TOPIC</div><div class="val">${d.lessonPlan.replace(/\n/g, '<br>')}</div>` : ''}
@@ -249,8 +254,8 @@ function ExportModal({ calendarName, period, dayData, onClose }: {
       ? `<div class="section"><div class="sec-title">📋 Homework to Assign</div><div class="sec-body">${d.hw}</div></div>` : ''
     const deadlineSection = d?.deadlines
       ? `<div class="section"><div class="sec-title">⏰ Deadlines</div><div class="sec-body">${d.deadlines}</div></div>` : ''
-    const notesSection = d?.notes
-      ? `<div class="section closed"><div class="sec-title">⚠️ Note</div><div class="sec-body">${d.notes}</div></div>` : ''
+    const notesSection = (d?.dayType && d.dayType !== 'no_school')
+      ? `<div class="section closed"><div class="sec-title">⚠️ Note</div><div class="sec-body">${d.dayLabel || d.dayType}</div></div>` : ''
     const teacherNotes = subNotes.trim()
       ? `<div class="section notes"><div class="sec-title">✏️ Additional Notes from Teacher</div><div class="sec-body">${subNotes.replace(/\n/g, '<br>')}</div></div>` : ''
     openPrint(`<!DOCTYPE html><html><head><title>Sub Plan — ${dateLabel}</title>
@@ -582,6 +587,12 @@ function MonthlyView({ currentDate, dayData, pendingChanges, applying, onDayClic
             const isDraggingThis = dragging === ds
             const isDragTarget   = dragOver === ds
             const hasContent = data && (data.lessonPlan || data.assessments || data.milestones || data.hw || data.deadlines || data.notes)
+            // Day type — dayType field takes precedence; fall back to legacy notes
+            const activeDayType = data?.dayType ?? (data?.notes ? 'no_school' : null)
+            const activeLabel   = data?.dayLabel ?? data?.notes ?? ''
+            const isClosed = activeDayType === 'no_school'
+            const isModified = activeDayType === 'modified'
+            const isNote = activeDayType === 'note'
             return (
               <div key={ds}
                 draggable={!!hasContent}
@@ -593,14 +604,17 @@ function MonthlyView({ currentDate, dayData, pendingChanges, applying, onDayClic
                 className={`border-r border-b border-ink-900/6 last:border-r-0 p-2 cursor-pointer transition-colors relative flex flex-col
                   ${isDraggingThis ? 'opacity-40 ring-2 ring-inset ring-sage/50' : ''}
                   ${isDragTarget ? '!bg-sage/12 ring-2 ring-inset ring-sage/50' : ''}
-                  ${!isDraggingThis && !isDragTarget && data?.notes ? '!bg-blue-50/60' : ''}
-                  ${!isDraggingThis && !isDragTarget && inMonth && !data?.notes ? 'bg-white hover:bg-cream-50' : ''}
+                  ${!isDraggingThis && !isDragTarget && isClosed ? '!bg-red-50/60' : ''}
+                  ${!isDraggingThis && !isDragTarget && isModified ? '!bg-amber-50/40' : ''}
+                  ${!isDraggingThis && !isDragTarget && inMonth && !activeDayType ? 'bg-white hover:bg-cream-50' : ''}
                   ${!isDraggingThis && !isDragTarget && !inMonth ? 'bg-ink-50/40 opacity-60' : ''}
-                  ${!isDraggingThis && !isDragTarget && todayDay && !hasPending && !data?.notes ? '!bg-sage/5 hover:!bg-sage/8' : ''}
+                  ${!isDraggingThis && !isDragTarget && todayDay && !hasPending && !activeDayType ? '!bg-sage/5 hover:!bg-sage/8' : ''}
                   ${!isDraggingThis && !isDragTarget && hasPending && !todayDay ? '!bg-amber-50/40' : ''}
                   ${!isDraggingThis && !isDragTarget && hasPending && todayDay ? '!bg-amber-50/60' : ''}`}>
                 {hasPending && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-amber-400 rounded-r" />}
-                {data?.notes && !isDragTarget && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-blue-400 rounded-r" />}
+                {isClosed && !isDragTarget && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-red-400 rounded-r" />}
+                {isModified && !isDragTarget && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-amber-400 rounded-r" />}
+                {isNote && !isDragTarget && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-ink-300 rounded-r" />}
                 {isDragTarget && <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-sage rounded-r" />}
                 <div className="flex justify-between items-start mb-1">
                   <span className={`font-mono text-xs w-6 h-6 flex items-center justify-center rounded-full ${todayDay ? 'bg-sage text-white font-bold' : 'text-ink-500'}`}>{format(day, 'd')}</span>
@@ -616,11 +630,13 @@ function MonthlyView({ currentDate, dayData, pendingChanges, applying, onDayClic
                   </div>
                 </div>
                 <div className="space-y-0.5 overflow-hidden">
-                  {data?.notes      && <div className="event-pill truncate bg-blue-100 text-blue-800 border-blue-200">{data.notes}</div>}
-                  {!data?.notes && data?.milestones  && <div className="event-pill event-pill-milestone truncate">{data.milestones}</div>}
-                  {!data?.notes && data?.assessments && <div className="event-pill event-pill-assessment truncate">{data.assessments}</div>}
-                  {!data?.notes && data?.lessonPlan  && <div className="event-pill event-pill-lesson truncate">{data.lessonPlan.split('\n')[0]}</div>}
-                  {!data?.notes && data?.hw          && <div className="event-pill event-pill-hw truncate">HW: {data.hw}</div>}
+                  {isClosed    && <div className="event-pill truncate bg-red-100 text-red-800 border-red-200">🚫 {activeLabel || 'No School'}</div>}
+                  {isModified  && <div className="event-pill truncate bg-amber-100 text-amber-800 border-amber-200">🟡 {activeLabel || 'Modified'}</div>}
+                  {isNote      && <div className="event-pill truncate bg-ink-100 text-ink-700 border-ink-200">📝 {activeLabel || 'Note'}</div>}
+                  {!isClosed && data?.milestones  && <div className="event-pill event-pill-milestone truncate">{data.milestones}</div>}
+                  {!isClosed && data?.assessments && <div className="event-pill event-pill-assessment truncate">{data.assessments}</div>}
+                  {!isClosed && data?.lessonPlan  && <div className="event-pill event-pill-lesson truncate">{data.lessonPlan.split('\n')[0]}</div>}
+                  {!isClosed && data?.hw          && <div className="event-pill event-pill-hw truncate">HW: {data.hw}</div>}
                 </div>
                 {dayPending.slice(0, 2).map(c => (
                   <AIChangeCard key={c.id} change={c} applying={applying === c.id}
@@ -771,11 +787,50 @@ function DayColumn({ day, data, focused, dayPending, applying, onFocus, onClose,
     { key: 'milestones',  label: 'Milestones',   placeholder: 'Unit 4 starts' },
     { key: 'assessments', label: 'Assessments',  placeholder: 'Ch 5 Quiz' },
     { key: 'hw',          label: 'HW',           placeholder: 'Quadratics HW' },
-    { key: 'notes',       label: 'Day Note',     placeholder: 'e.g. ❄ Snow Day, Field Trip, No School' },
   ]
+
+  // Day type — prefer dayType field, fall back to legacy notes for backwards compat
+  const activeDayType: DayData['dayType'] = data.dayType ?? (data.notes ? 'no_school' : null)
+  const activeLabel  = data.dayLabel ?? data.notes ?? ''
+  const isClosed     = activeDayType === 'no_school'
+  const isModified   = activeDayType === 'modified'
+  const isNote       = activeDayType === 'note'
+
   const pendingHere = dayPending.filter(c => c.status === 'pending')
   const hasPending  = pendingHere.length > 0
-  const isClosed    = !!(data.notes && data.notes.trim())
+
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const modifiedLabel = data.modifiedType === 'half_day'       ? 'Half Day'
+                      : data.modifiedType === 'late_arrival'   ? 'Late Arrival'
+                      : data.modifiedType === 'early_dismissal'? 'Early Dismissal'
+                      : data.modifiedType === 'other'          ? (activeLabel || 'Modified Day')
+                      : 'Modified Day'
+
+  const setDayType = (type: DayData['dayType']) => {
+    onChange('dayType', type as any)
+    if (!type) {
+      onChange('dayLabel' as any, '')
+      onChange('modifiedType' as any, '')
+      onChange('notes', '') // clear legacy notes too
+    }
+    setPickerOpen(false)
+  }
+
+  // Badge shown in header
+  const headerBadge = isClosed ? (
+    <span className="flex items-center gap-0.5 text-[9px] font-semibold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-full border border-red-200">
+      🚫 {activeLabel || 'No School'}
+    </span>
+  ) : isModified ? (
+    <span className="flex items-center gap-0.5 text-[9px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full border border-amber-200">
+      🟡 {activeLabel || modifiedLabel}
+    </span>
+  ) : isNote ? (
+    <span className="flex items-center gap-0.5 text-[9px] font-semibold text-ink-500 bg-ink-100 px-1.5 py-0.5 rounded-full border border-ink-200">
+      📝 {activeLabel || 'Note'}
+    </span>
+  ) : null
 
   // Determine default priority based on what content exists
   const effectivePriority: PriorityTier = data.priority ?? (
@@ -788,19 +843,15 @@ function DayColumn({ day, data, focused, dayPending, applying, onFocus, onClose,
   return (
     <div className={`border-r border-ink-900/8 last:border-r-0 flex flex-col flex-1 relative
       ${hasPending ? 'border-t-2 border-t-amber-400' : ''}
-      ${isClosed ? '!bg-blue-50/70' : ''}`}
+      ${isClosed ? '!bg-red-50/60' : isModified ? '!bg-amber-50/40' : ''}`}
       onClick={!focused ? onFocus : undefined}>
       <div className={`flex items-center justify-between px-3 py-3 border-b border-ink-900/8 sticky top-0 z-10
-        ${isClosed ? 'bg-blue-100/60' : isToday(day) ? 'bg-sage/8' : hasPending ? 'bg-amber-50/60' : 'bg-white'}`}>
-        <div className="flex items-center gap-2">
+        ${isClosed ? 'bg-red-100/50' : isModified ? 'bg-amber-50/70' : isToday(day) ? 'bg-sage/8' : hasPending ? 'bg-amber-50/60' : 'bg-white'}`}>
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-body text-xs font-medium text-ink-500 uppercase">{format(day, 'EEE')}</span>
           <span className={`font-mono text-sm w-6 h-6 flex items-center justify-center rounded-full ${isToday(day) ? 'bg-sage text-white' : 'text-ink-800'}`}>{format(day, 'd')}</span>
-          {isClosed && (
-            <span className="flex items-center gap-0.5 text-[9px] font-semibold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded-full border border-blue-200">
-              🚫 Closed
-            </span>
-          )}
-          {!isClosed && hasPending && (
+          {headerBadge}
+          {!activeDayType && !isClosed && hasPending && (
             <span className="flex items-center gap-0.5 text-[9px] font-semibold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">
               <Sparkles className="w-2.5 h-2.5" />{pendingHere.length} AI
             </span>
@@ -808,6 +859,63 @@ function DayColumn({ day, data, focused, dayPending, applying, onFocus, onClose,
         </div>
         <div className="flex items-center gap-1.5">
           {focused && !isClosed && <PriorityBadge priority={effectivePriority} onChange={p => onChange('priority', p)} />}
+          {/* Mark Day As button */}
+          {focused && (
+            <div className="relative">
+              <button
+                onClick={e => { e.stopPropagation(); setPickerOpen(o => !o) }}
+                className={`flex items-center gap-1 text-[9px] font-semibold px-1.5 py-1 rounded-lg border transition-all ${pickerOpen || activeDayType ? 'border-ink-900/30 bg-ink-900/6 text-ink-700' : 'border-ink-900/12 text-ink-400 hover:border-ink-900/25 hover:text-ink-600'}`}
+                title="Mark day as…"
+              >
+                <Flag className="w-2.5 h-2.5" />Mark
+              </button>
+              {pickerOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-ink-900/12 rounded-xl shadow-lg p-2 min-w-[200px]" onClick={e => e.stopPropagation()}>
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    <button onClick={() => setDayType('no_school')}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-body font-medium transition-all text-left ${activeDayType === 'no_school' ? 'border-red-300 bg-red-50 text-red-700' : 'border-ink-900/10 hover:border-red-200 hover:bg-red-50/60 text-ink-700'}`}>
+                      🚫 No School
+                    </button>
+                    <button onClick={() => setDayType('modified')}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-body font-medium transition-all text-left ${activeDayType === 'modified' ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-ink-900/10 hover:border-amber-200 hover:bg-amber-50/60 text-ink-700'}`}>
+                      🟡 Modified Day
+                    </button>
+                    <button onClick={() => setDayType('note')}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-xs font-body font-medium transition-all text-left ${activeDayType === 'note' ? 'border-ink-300 bg-ink-50 text-ink-700' : 'border-ink-900/10 hover:border-ink-900/20 text-ink-600'}`}>
+                      📝 Note Only
+                    </button>
+                    <button onClick={() => setDayType(null)}
+                      className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg border border-ink-900/10 text-xs font-body font-medium text-ink-500 hover:border-ink-900/20 hover:text-ink-700 transition-all text-left">
+                      ✕ Clear
+                    </button>
+                  </div>
+                  {/* Label input */}
+                  {activeDayType && (
+                    <div className="pt-2 border-t border-ink-900/8">
+                      <input
+                        type="text"
+                        value={data.dayLabel ?? ''}
+                        onChange={e => onChange('dayLabel' as any, e.target.value)}
+                        placeholder={activeDayType === 'no_school' ? 'e.g. Snow Day, Holiday…' : activeDayType === 'modified' ? 'e.g. Assembly, Half Day…' : 'e.g. Sub today, Field trip…'}
+                        className="input-field text-xs w-full py-1.5"
+                      />
+                      {/* Modified subtype row */}
+                      {activeDayType === 'modified' && (
+                        <div className="grid grid-cols-2 gap-1 mt-1.5">
+                          {(['half_day', 'late_arrival', 'early_dismissal', 'other'] as const).map(sub => (
+                            <button key={sub} onClick={() => onChange('modifiedType' as any, sub)}
+                              className={`text-[10px] font-body px-2 py-1 rounded-lg border transition-all ${data.modifiedType === sub ? 'border-amber-300 bg-amber-50 text-amber-700 font-semibold' : 'border-ink-900/10 text-ink-500 hover:border-amber-200'}`}>
+                              {sub === 'half_day' ? 'Half Day' : sub === 'late_arrival' ? 'Late Arrival' : sub === 'early_dismissal' ? 'Early Dismissal' : 'Other'}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {focused && <button onClick={e => { e.stopPropagation(); onClose() }} className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-ink-900/8"><X className="w-3.5 h-3.5 text-ink-500" /></button>}
         </div>
       </div>
@@ -818,46 +926,63 @@ function DayColumn({ day, data, focused, dayPending, applying, onFocus, onClose,
             onAccept={() => onAcceptChange(c.id)} onDecline={() => onDeclineChange(c.id)} />
         ))}
 
-        {/* ── Closed-day banner ── */}
+        {/* ── Closed-day banner (no_school) ── */}
         {isClosed ? (
           <div className="flex flex-col gap-3">
-            <div className="bg-blue-100 border border-blue-200 rounded-xl px-3 py-4 text-center">
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-4 text-center">
               <div className="text-2xl mb-1">🚫</div>
-              <p className="font-body text-sm font-semibold text-blue-800">{data.notes}</p>
-              <p className="font-body text-[10px] text-blue-600 mt-1">No events can be scheduled on this day.</p>
+              <p className="font-body text-sm font-semibold text-red-800">{activeLabel || 'No School'}</p>
+              <p className="font-body text-[10px] text-red-500 mt-1">No lessons scheduled on this day.</p>
             </div>
-            {/* Allow editing the Day Note field to rename/clear the closure */}
-            <div onClick={e => e.stopPropagation()}>
-              <div className="font-body text-[10px] font-semibold text-ink-400 uppercase tracking-widest mb-1">Day Note (edit to rename or clear)</div>
-              <ContentField
-                value={data.notes || ''}
-                placeholder="e.g. ❄ Snow Day, Field Trip, No School"
-                onChange={v => onChange('notes', v)}
-                onFocus={() => { onFieldFocus(); if (!focused) onFocus() }}
-              />
-            </div>
-            {/* Reschedule button */}
+            {/* AI Reschedule button for no_school */}
             {onRescheduleRequest && (
               <button
-                onClick={e => { e.stopPropagation(); onRescheduleRequest(format(day, 'yyyy-MM-dd'), data.notes) }}
+                onClick={e => { e.stopPropagation(); onRescheduleRequest(format(day, 'yyyy-MM-dd'), activeLabel || 'No School') }}
                 className="w-full text-[10px] py-2 bg-sage/15 hover:bg-sage/25 text-sage-700 rounded-lg font-semibold border border-sage/20 transition-colors flex items-center justify-center gap-1">
                 <Sparkles className="w-3 h-3" />Ask AI to reschedule this day's events
               </button>
             )}
           </div>
         ) : (
-          /* Editable fields — only shown when day is not closed */
-          fields.map(({ key, label, placeholder }) => (
-            <div key={key} onClick={e => e.stopPropagation()}>
-              <div className="font-body text-[10px] font-semibold text-ink-400 uppercase tracking-widest mb-1">{label}</div>
-              <ContentField
-                value={data[key as keyof DayData] as string || ''}
-                placeholder={placeholder}
-                onChange={v => onChange(key, v)}
-                onFocus={() => { onFieldFocus(); if (!focused) onFocus() }}
-              />
-            </div>
-          ))
+          /* Editable fields — shown for standard, modified, and note days */
+          <>
+            {/* Modified day banner */}
+            {isModified && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-center gap-2">
+                <span className="text-base">🟡</span>
+                <div>
+                  <p className="font-body text-xs font-semibold text-amber-800">{activeLabel || modifiedLabel}</p>
+                  <p className="font-body text-[10px] text-amber-600">School in session — plan lighter content</p>
+                </div>
+              </div>
+            )}
+            {/* Note banner */}
+            {isNote && activeLabel && (
+              <div className="bg-ink-50 border border-ink-900/10 rounded-xl px-3 py-2 flex items-center gap-2">
+                <span className="text-base">📝</span>
+                <p className="font-body text-xs text-ink-600">{activeLabel}</p>
+              </div>
+            )}
+            {fields.map(({ key, label, placeholder }) => (
+              <div key={key} onClick={e => e.stopPropagation()}>
+                <div className="font-body text-[10px] font-semibold text-ink-400 uppercase tracking-widest mb-1">{label}</div>
+                <ContentField
+                  value={data[key as keyof DayData] as string || ''}
+                  placeholder={placeholder}
+                  onChange={v => onChange(key, v)}
+                  onFocus={() => { onFieldFocus(); if (!focused) onFocus() }}
+                />
+              </div>
+            ))}
+            {/* Reschedule button for modified days */}
+            {isModified && onRescheduleRequest && (
+              <button
+                onClick={e => { e.stopPropagation(); onRescheduleRequest(format(day, 'yyyy-MM-dd'), activeLabel || modifiedLabel) }}
+                className="w-full text-[10px] py-2 bg-sage/15 hover:bg-sage/25 text-sage-700 rounded-lg font-semibold border border-sage/20 transition-colors flex items-center justify-center gap-1">
+                <Sparkles className="w-3 h-3" />Ask AI to reschedule this day's events
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -1735,12 +1860,15 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
       setDayData(cur => {
         const data = cur[dateStr] || {}
         api.lessons.save(params.calendarId, dateStr, {
-          lessonPlan:  (data as any).lessonPlan  || '',
-          deadlines:   (data as any).deadlines   || '',
-          milestones:  (data as any).milestones  || '',
-          assessments: (data as any).assessments || '',
-          hw:          (data as any).hw          || '',
-          notes:       (data as any).notes       || '',
+          lessonPlan:   (data as any).lessonPlan   || '',
+          deadlines:    (data as any).deadlines    || '',
+          milestones:   (data as any).milestones   || '',
+          assessments:  (data as any).assessments  || '',
+          hw:           (data as any).hw           || '',
+          notes:        (data as any).notes        || '',
+          dayType:      (data as any).dayType      ?? null,
+          modifiedType: (data as any).modifiedType ?? null,
+          dayLabel:     (data as any).dayLabel     || '',
         })
           .then(() => setSaveStatus('saved'))
           .catch(() => setSaveStatus('error'))
@@ -1760,11 +1888,15 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
     if (isDemo) return
     for (const [ds, data] of Object.entries(snapshot)) {
       api.lessons.save(params.calendarId, ds, {
-        lessonPlan:  data.lessonPlan  || '',
-        deadlines:   data.deadlines   || '',
-        milestones:  data.milestones  || '',
-        assessments: data.assessments || '',
-        hw:          data.hw          || '',
+        lessonPlan:   data.lessonPlan   || '',
+        deadlines:    data.deadlines    || '',
+        milestones:   data.milestones   || '',
+        assessments:  data.assessments  || '',
+        hw:           data.hw           || '',
+        notes:        data.notes        || '',
+        dayType:      data.dayType      ?? null,
+        modifiedType: data.modifiedType ?? null,
+        dayLabel:     data.dayLabel     || '',
       }).catch(() => {})
     }
   }, [params.calendarId, isDemo])
@@ -1808,8 +1940,8 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
     setTimeout(() => {
       if (!movedToData) return
       Promise.all([
-        api.lessons.save(params.calendarId, toDs,   { lessonPlan: movedToData.lessonPlan || '', deadlines: movedToData.deadlines || '', milestones: movedToData.milestones || '', assessments: movedToData.assessments || '', hw: movedToData.hw || '', notes: movedToData.notes || '' }),
-        api.lessons.save(params.calendarId, fromDs, { lessonPlan: '', deadlines: '', milestones: '', assessments: '', hw: '', notes: '' }),
+        api.lessons.save(params.calendarId, toDs,   { lessonPlan: movedToData.lessonPlan || '', deadlines: movedToData.deadlines || '', milestones: movedToData.milestones || '', assessments: movedToData.assessments || '', hw: movedToData.hw || '', notes: movedToData.notes || '', dayType: movedToData.dayType ?? null, modifiedType: movedToData.modifiedType ?? null, dayLabel: movedToData.dayLabel || '' }),
+        api.lessons.save(params.calendarId, fromDs, { lessonPlan: '', deadlines: '', milestones: '', assessments: '', hw: '', notes: '', dayType: null, modifiedType: null, dayLabel: '' }),
       ]).then(() => setSaveStatus('saved')).catch(() => setSaveStatus('error'))
     }, 50)
   }, [params.calendarId, isDemo])

@@ -214,7 +214,7 @@ function buildDiff(tool: string, args: any, existingData: Record<string, any>): 
       date: args.date,
       field: 'assessments',
       before: existing.assessments || '',
-      after: `${args.title}${args.type ? ` (${args.type})` : ''}`,
+      after: args.title,
       status: 'pending',
       allArgs: args,
     })
@@ -511,10 +511,13 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
     }
 
     // Build a set of closed-day dates from calendarContext so we can enforce them server-side too
+    // A day is "closed" if dayType === 'no_school', OR (legacy) if notes is set
+    const isClosedDay = (d: any) => d.dayType === 'no_school' || (!d.dayType && d.notes && d.notes.trim())
+    const closedDayLabel = (d: any) => d.dayLabel || d.notes || 'No School'
     const closedDays = new Set<string>(
       calendarContext
         ? Object.entries(calendarContext)
-            .filter(([, d]: [string, any]) => d.notes && d.notes.trim())
+            .filter(([, d]: [string, any]) => isClosedDay(d))
             .map(([date]) => date)
         : []
     )
@@ -523,19 +526,21 @@ router.post('/chat', async (req: AuthRequest, res: Response) => {
       ? `\n\n--- CURRENT CALENDAR STATE ---\n${
           Object.entries(calendarContext)
             .sort(([a],[b]) => a.localeCompare(b))
-            .map(([date, data]: [string, any]) =>
-              `${date}${data.priority ? ` [Priority:${data.priority}]` : ''}${data.notes ? ` [CLOSED: ${data.notes}]` : ''}: ${[
-                data.notes && `🚫 CLOSED — ${data.notes}`,
-                data.lessonPlan && `Lesson: ${data.lessonPlan.slice(0,80)}`,
-                data.assessments && `Assessment: ${data.assessments}`,
-                data.milestones && `Milestone: ${data.milestones}`,
-                data.hw && `HW: ${data.hw}`,
-                data.deadlines && `Deadline: ${data.deadlines}`,
+            .map(([date, data]: [string, any]) => {
+              const closed = isClosedDay(data)
+              const label  = closedDayLabel(data)
+              return `${date}${data.priority ? ` [Priority:${data.priority}]` : ''}${closed ? ` [CLOSED: ${label}]` : ''}: ${[
+                closed && `🚫 CLOSED — ${label}`,
+                !closed && data.lessonPlan && `Lesson: ${data.lessonPlan.slice(0,80)}`,
+                !closed && data.assessments && `Assessment: ${data.assessments}`,
+                !closed && data.milestones && `Milestone: ${data.milestones}`,
+                !closed && data.hw && `HW: ${data.hw}`,
+                !closed && data.deadlines && `Deadline: ${data.deadlines}`,
               ].filter(Boolean).join(' | ')}`
-            ).join('\n')
+            }).join('\n')
         }\n--- END CALENDAR ---\n\n🚫 CLOSED DAYS (absolutely no scheduling allowed):\n${
           closedDays.size > 0
-            ? [...closedDays].sort().map(d => `  • ${d}: ${(calendarContext as any)[d]?.notes}`).join('\n')
+            ? [...closedDays].sort().map(d => `  • ${d}: ${closedDayLabel((calendarContext as any)[d])}`).join('\n')
             : '  (none)'
         }\n\nCRITICAL: Never call createLesson, insertAssessment, or moveLesson with a toDate that is in the CLOSED DAYS list above. If asked to reschedule TO a closed day, find the next available open school day instead.`
       : ''
@@ -568,8 +573,13 @@ Your job:
 - Be concise and action-oriented`
       : `You are an expert AI assistant for a teacher's course planning calendar.
 Course: "${course.name}" (${course.period})
-Today: ${todayStr} (${nowEST})
-${selectedDate ? `Selected date: ${selectedDate}` : ''}${ragContext}${calContextStr}
+Real-world date today: ${todayStr} (${nowEST})
+${selectedDate
+  ? `TEACHER'S FOCUSED DATE: ${selectedDate}
+CRITICAL: When the teacher says "today", "tonight", "this day", "for tonight", "due today", or refers to the current day without specifying a date — they mean ${selectedDate}, NOT the real-world date above. Always use ${selectedDate} as the target date unless they explicitly name a different date.`
+  : `No date selected. Use real-world date ${nowEST} as a reference only — ask for clarification if a specific date is needed.`
+}
+${ragContext}${calContextStr}
 
 CRITICAL — ACT IMMEDIATELY:
 - When the teacher asks you to add, create, update, move, delete, or change ANYTHING on the calendar — call the tool RIGHT AWAY.
@@ -956,9 +966,14 @@ async function extractSingleSessionDays(
       messages: [
         {
           role: 'system',
-          content: `You are a school calendar parser. Find all single-session days, early dismissal days, half days, and modified-schedule days from the provided text.
+          content: `You are a school calendar parser. Find ALL of the following from the provided text:
+- Single session days
+- Early dismissal days (look for "EARLY DISMISSAL", "early dismissal", "ED", "Early Release", "ER")
+- Half days
+- Modified schedule days
+- Late arrival / delayed opening days
 IMPORTANT: These are days where school IS in session but with a shortened or modified schedule — NOT holidays or no-school days.
-Return ONLY a JSON array of objects with shape { "date": "YYYY-MM-DD", "label": "Single Session" | "Early Dismissal" | "Half Day" | exact label from text }.
+Return ONLY a JSON array of objects with shape { "date": "YYYY-MM-DD", "label": "<exact label from text or best description>" }.
 Only include dates between ${startDate} and ${endDate}.
 If none found, return [].
 Respond with ONLY the JSON array, no explanation, no markdown.`,
@@ -1002,7 +1017,8 @@ async function extractKeyDatesFromContext(
         {
           role: 'system',
           content: `You are a school calendar parser. Extract all notable school events that happen ON school days from the provided text.
-Examples: Back to School Night, Parent-Teacher Conferences, Spirit Week, Field Day, Picture Day, Open House, Report Card Day, Pep Rally, standardized testing days, marking period ends, etc.
+Examples: Back to School Night, Parent-Teacher Conferences, Spirit Week, Field Day, Picture Day, Open House, Report Card Day, Pep Rally, standardized testing days, end of marking period / end of quarter / end of trimester, progress reports, report cards, etc.
+IMPORTANT: Also include any "end of marking period", "end of quarter", "MP ends", "Q1 ends", "marking period end" entries — these are critical milestones.
 Do NOT include holidays, breaks, or no-school days.
 Return ONLY a JSON array of objects with shape { "date": "YYYY-MM-DD", "label": "Event Name" }.
 Only include dates between ${startDate} and ${endDate}.
@@ -1061,10 +1077,29 @@ router.post('/generate-calendar', async (req: AuthRequest, res: Response) => {
     if (startDate && startDate !== 'today' && startDate !== 'ai' && /^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
       planStartDate = startDate
     }
-    // For 'ai' mode, add a hint to the context so the AI can pick from keyDates
-    const aiStartHint = startDate === 'ai'
-      ? '\n\n[PLANNING HINT]\nDetermine the best start date for planning based on the school calendar and syllabus. Look for the first day of school, semester start, or the first instructional day after any breaks.'
-      : ''
+    // For 'ai' mode: extract the first day of school from the school calendar text
+    // We do a quick parse before the main extraction so we can use it as planStartDate
+    let aiStartHint = ''
+    if (startDate === 'ai') {
+      const schoolCalPreview = contextText.match(/\[SCHOOL CALENDAR\]([\s\S]*?)(?=\[|$)/i)?.[1]?.trim() || ''
+      if (schoolCalPreview) {
+        try {
+          const firstDayResp = await openai.chat.completions.create({
+            model: 'gpt-4o-mini', temperature: 0, max_tokens: 40,
+            messages: [
+              { role: 'system', content: 'Extract the FIRST day of school (first instructional day of the school year) from the text. Return ONLY a date in YYYY-MM-DD format. If not found, return null.' },
+              { role: 'user', content: schoolCalPreview.slice(0, 3000) },
+            ],
+          })
+          const raw = (firstDayResp.choices[0].message.content || '').trim()
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+            planStartDate = raw
+            console.log(`[generate-calendar] AI start mode: first day of school = ${planStartDate}`)
+          }
+        } catch {}
+      }
+      aiStartHint = '\n\n[PLANNING HINT]\nThis plan starts from the first instructional day of the school year as extracted from the school calendar.'
+    }
 
     // Honour the requested maxDays (default 22 = ~1 month, max 200)
     const cap = typeof maxDays === 'number' && maxDays > 0 ? Math.min(maxDays, 200) : 22
