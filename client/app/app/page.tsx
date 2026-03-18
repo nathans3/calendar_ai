@@ -793,13 +793,25 @@ export default function AppLandingPage() {
     api.events.list(month)
       .then(events => {
         const todayStr = format(new Date(), 'yyyy-MM-dd')
+        // Deduplicate by startTime+endTime+title — keep the base event (no '__' in id) over repeat instances
+        const seen = new Set<string>()
         const upcoming = events
           .filter(e => e.date === todayStr)
           .sort((a, b) => {
-            // All-day events first, then sort by startTime
+            // Base events before repeat instances so dedup keeps the base
+            const aIsRepeat = String(a.id).includes('__')
+            const bIsRepeat = String(b.id).includes('__')
+            if (aIsRepeat && !bIsRepeat) return 1
+            if (!aIsRepeat && bIsRepeat) return -1
             if (a.allDay && !b.allDay) return -1
             if (!a.allDay && b.allDay) return 1
             return (a.startTime || '00:00').localeCompare(b.startTime || '00:00')
+          })
+          .filter(e => {
+            const key = `${e.startTime || 'allday'}__${e.endTime || ''}__${e.title}`
+            if (seen.has(key)) return false
+            seen.add(key)
+            return true
           })
         setTodayEvents(upcoming)
       })
