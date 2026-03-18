@@ -177,8 +177,9 @@ function stripMarkdown(text: string): string {
 }
 
 
-function ViewEventModal({ event, onClose, onEdit, onDelete }: {
+function ViewEventModal({ event, onClose, onEdit, onDelete, onOpenCalendar }: {
   event: LocalEvent; onClose: () => void; onEdit: () => void; onDelete: () => void
+  onOpenCalendar?: (calendarId: string) => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/20 backdrop-blur-sm" onClick={onClose}>
@@ -219,6 +220,14 @@ function ViewEventModal({ event, onClose, onEdit, onDelete }: {
           )}
           {event.repeatRule && event.repeatRule !== 'none' && (
             <div className="flex items-center gap-2 text-ink-600"><Repeat className="w-4 h-4 text-ink-400" /><span className="font-body text-sm capitalize">Repeats {event.repeatRule}</span></div>
+          )}
+          {event.isPeriodBlock && event.calendarId && onOpenCalendar && (
+            <button
+              onClick={() => { onClose(); onOpenCalendar(event.calendarId!) }}
+              className="w-full flex items-center justify-center gap-2 mt-1 py-2 rounded-xl bg-sage/10 hover:bg-sage/20 text-sage-700 font-body text-sm font-semibold transition-colors">
+              <Calendar className="w-4 h-4" />
+              Open calendar →
+            </button>
           )}
         </div>
       </div>
@@ -961,12 +970,22 @@ export default function SchedulePage() {
             onEventClick={setViewEvent}
             onDragMove={handleDragMove} />
         ) : (
-          <FullWeekView currentDate={currentDate} events={[...events, ...periodBlocks]}
+          <FullWeekView currentDate={currentDate} events={(() => {
+            // Deduplicate: remove periodBlocks that already have a matching DB event
+            // (same date + same startTime + same endTime) to prevent doubles
+            const dbEventKeys = new Set(
+              events.filter(e => !e.isPeriodBlock).map(e => `${e.date}__${e.startTime}__${e.endTime}`)
+            )
+            const dedupedPeriodBlocks = periodBlocks.filter(
+              p => !dbEventKeys.has(`${p.date}__${p.startTime}__${p.endTime}`)
+            )
+            return [...events, ...dedupedPeriodBlocks]
+          })()}
             closedDates={closedDates}
             onCellClick={(date, hour) => setCreateModal({ date, hour })}
             onEventClick={ev => {
               if (ev.isPeriodBlock) {
-                if (ev.calendarId) router.push(`/app/calendar/${ev.calendarId}`)
+                setViewEvent(ev)  // show popup with 'Open calendar' button
                 return
               }
               setViewEvent(ev)
@@ -1003,7 +1022,8 @@ export default function SchedulePage() {
         <ViewEventModal event={viewEvent}
           onClose={() => setViewEvent(null)}
           onEdit={() => { setEditEvent(viewEvent); setViewEvent(null) }}
-          onDelete={() => { handleDeleteEvent(viewEvent.id); setViewEvent(null) }} />
+          onDelete={() => { handleDeleteEvent(viewEvent.id); setViewEvent(null) }}
+          onOpenCalendar={(calendarId) => router.push(`/app/calendar/${calendarId}`)} />
       )}
     </div>
   )
