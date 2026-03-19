@@ -794,15 +794,31 @@ export default function AppLandingPage() {
   useEffect(() => {
     if (!user || user.id.startsWith('demo-')) return
     const month = format(new Date(), 'yyyy-MM')
-    api.events.list(month)
-      .then(events => {
-        const todayStr = format(new Date(), 'yyyy-MM-dd')
-        // Deduplicate by startTime+endTime+title — keep the base event (no '__' in id) over repeat instances
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+
+    Promise.all([api.events.list(month), api.calendars.list().catch(() => [] as any[])])
+      .then(([events, cals]) => {
+        // Build period label → calendar id for enrichment/filtering
+        const periodToCalId: Record<string, string> = {}
+        ;(cals as any[]).forEach((cal: any) => {
+          if (cal.period) periodToCalId[cal.period.trim()] = cal.id
+        })
+
+        // Deduplicate by startTime+endTime+title — keep base event over repeat instances
         const seen = new Set<string>()
         const upcoming = events
           .filter(e => e.date === todayStr)
+          // Filter out stale period events (weekly sage events whose calendar was deleted)
+          .filter(e => {
+            if (e.color === 'sage' && (e as any).repeatRule === 'weekly') {
+              const matchingPeriod = Object.keys(periodToCalId).find(label =>
+                e.title === label || e.title.startsWith(label + ' (')
+              )
+              return !!matchingPeriod
+            }
+            return true
+          })
           .sort((a, b) => {
-            // Base events before repeat instances so dedup keeps the base
             const aIsRepeat = String(a.id).includes('__')
             const bIsRepeat = String(b.id).includes('__')
             if (aIsRepeat && !bIsRepeat) return 1
@@ -914,21 +930,36 @@ export default function AppLandingPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {todayEvents.map(ev => (
-                    <div key={ev.id} className="flex items-center gap-3 py-2 border-b border-ink-900/5 last:border-0">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0 bg-ink-900" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-body text-sm text-ink-900 truncate">{ev.title}</p>
-                        {ev.allDay ? (
-                          <p className="font-body text-xs text-ink-400">All day</p>
-                        ) : ev.startTime ? (
-                          <p className="font-body text-xs text-ink-400">
-                            {fmt12(ev.startTime)}{ev.endTime ? ` – ${fmt12(ev.endTime)}` : ''}
-                          </p>
-                        ) : null}
+                  {todayEvents.map(ev => {
+                    // Enrich period events with calendarId for the "Open →" link
+                    const isPeriod = ev.color === 'sage' && (ev as any).repeatRule === 'weekly'
+                    const periodCalId = isPeriod ? (() => {
+                      const cals = calendars
+                      const match = cals.find(cal => cal.period && (ev.title === cal.period || ev.title.startsWith(cal.period + ' (')))
+                      return match?.id
+                    })() : undefined
+                    return (
+                      <div key={ev.id} className="flex items-center gap-3 py-2 border-b border-ink-900/5 last:border-0">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPeriod ? 'bg-sage' : ev.color === 'amber' ? 'bg-amber-400' : 'bg-blue-400'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-body text-sm text-ink-900 truncate">{ev.title}</p>
+                          {ev.allDay ? (
+                            <p className="font-body text-xs text-ink-400">All day</p>
+                          ) : ev.startTime ? (
+                            <p className="font-body text-xs text-ink-400">
+                              {fmt12(ev.startTime)}{ev.endTime ? ` – ${fmt12(ev.endTime)}` : ''}
+                            </p>
+                          ) : null}
+                        </div>
+                        {isPeriod && periodCalId && (
+                          <Link href={`/app/calendar/${periodCalId}`}
+                            className="font-body text-[11px] text-sage hover:text-sage-700 transition-colors whitespace-nowrap">
+                            Open →
+                          </Link>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>

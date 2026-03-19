@@ -122,13 +122,32 @@ router.patch('/:id', async (req: AuthRequest, res: Response) => {
 // ── DELETE /api/calendars/:id ─────────────────────────────
 router.delete('/:id', async (req: AuthRequest, res: Response) => {
   try {
-    const result = await db.query(
-      'DELETE FROM courses WHERE id=$1 AND user_id=$2 RETURNING id',
+    // Get the calendar's period label before deleting so we can clean up events
+    const calResult = await db.query(
+      'SELECT id, name, period FROM courses WHERE id=$1 AND user_id=$2',
       [req.params.id, req.userId]
     )
-    if (result.rows.length === 0) {
+    if (calResult.rows.length === 0) {
       return res.status(404).json({ message: 'Calendar not found.' })
     }
+    const { period } = calResult.rows[0]
+
+    // Delete the calendar
+    await db.query('DELETE FROM courses WHERE id=$1 AND user_id=$2', [req.params.id, req.userId])
+
+    // Clean up the weekly period event(s) in the events table that belonged to this calendar.
+    // Only delete if NO other calendar still uses the same period label.
+    const remaining = await db.query(
+      'SELECT id FROM courses WHERE user_id=$1 AND period=$2',
+      [req.userId, period]
+    )
+    if (remaining.rows.length === 0 && period) {
+      await db.query(
+        `DELETE FROM events WHERE user_id=$1 AND color='sage' AND repeat_rule='weekly' AND (title=$2 OR title LIKE $3)`,
+        [req.userId, period, `${period} (%`]
+      )
+    }
+
     res.json({ message: 'Calendar deleted.', id: req.params.id })
   } catch (err) {
     console.error('Delete calendar error:', err)

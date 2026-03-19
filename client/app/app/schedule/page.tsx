@@ -864,8 +864,35 @@ export default function SchedulePage() {
       .then(data => data as unknown as LocalEvent[])
       .catch(() => [] as LocalEvent[])
 
-    const closedPromise = api.calendars.list()
-      .then(async cals => {
+    // Fetch calendars once — used for both closed-day detection and period event enrichment
+    const calsPromise = api.calendars.list().catch(() => [] as any[])
+
+    Promise.all([eventsPromise, calsPromise])
+      .then(async ([evs, cals]) => {
+        // Build period label → calendar id map for enrichment + filtering
+        const periodToCalId: Record<string, string> = {}
+        ;(cals as any[]).forEach((cal: any) => {
+          if (cal.period) periodToCalId[cal.period.trim()] = cal.id
+        })
+
+        // Enrich DB period events (weekly, sage) with isPeriodBlock + calendarId,
+        // and filter out any whose calendar has been deleted.
+        const enrichedEvents: LocalEvent[] = evs.map(ev => {
+          if (ev.color === 'sage' && ev.repeatRule === 'weekly' && !ev.isPeriodBlock) {
+            // Try to match to a current calendar by title prefix ("Period X" or "Period X (Name)")
+            const matchingPeriod = Object.keys(periodToCalId).find(label =>
+              ev.title === label || ev.title.startsWith(label + ' (')
+            )
+            if (matchingPeriod) {
+              return { ...ev, isPeriodBlock: true, calendarId: periodToCalId[matchingPeriod] }
+            }
+            // No matching calendar — this is a stale period event, exclude it
+            return null
+          }
+          return ev
+        }).filter((ev): ev is LocalEvent => ev !== null)
+
+        // Closed days from lesson notes
         const closedDays: LocalEvent[] = []
         for (const cal of cals) {
           try {
@@ -885,15 +912,11 @@ export default function SchedulePage() {
             }
           } catch {}
         }
-        return closedDays
-      })
-      .catch(() => [] as LocalEvent[])
 
-    Promise.all([eventsPromise, closedPromise])
-      .then(([evs, closed]) => {
-        setEvents([...evs, ...closed])
+        setEvents([...enrichedEvents, ...closedDays])
         setEventsLoading(false)
       })
+      .catch(() => setEventsLoading(false))
   }, [user, currentDate, isDemo])
 
   useEffect(() => {
