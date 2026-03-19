@@ -122,16 +122,6 @@ export default function LoginPage() {
                 </Link>
               </p>
             </div>
-
-            {/* Demo accounts shortcut */}
-            <div className="mt-8 pt-6 border-t border-ink-900/10 text-center">
-              <p className="font-body text-xs text-ink-400 mb-3">Just want to explore the app?</p>
-              <Link href="/demo-login"
-                className="inline-flex items-center gap-2 font-body text-sm font-medium text-sage hover:text-sage-600 transition-colors">
-                Use a test account →
-              </Link>
-            </div>
-          </div>
         </div>
       </main>
     </div>
