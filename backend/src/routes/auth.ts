@@ -7,7 +7,7 @@ import { authenticate, AuthRequest } from '../middleware/auth'
 
 const router = Router()
 
-const JWT_EXPIRES = '7d'
+const JWT_EXPIRES = '30d'
 
 const COOKIE_OPTS = {
   httpOnly: true,
