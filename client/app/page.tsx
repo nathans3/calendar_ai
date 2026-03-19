@@ -286,6 +286,46 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── Demo Video ───────────────────────── */}
+      <section className="py-24 px-6 bg-ink-900">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="font-display text-4xl text-cream-100 mb-4">Watch how it works</h2>
+            <p className="font-body text-base text-cream-300 max-w-xl mx-auto leading-relaxed">
+              See how a teacher uploads a syllabus and gets a full semester plan in under two minutes.
+            </p>
+          </div>
+
+          {/* Video frame */}
+          <div className="relative rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
+            <div className="bg-ink-800 px-4 py-2.5 flex items-center gap-2 border-b border-white/8">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-400/50" />
+                <div className="w-3 h-3 rounded-full bg-amber/50" />
+                <div className="w-3 h-3 rounded-full bg-sage/50" />
+              </div>
+              <span className="font-mono text-xs text-cream-300/50 ml-2">Calendar AI — Demo</span>
+            </div>
+            <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+              <iframe
+                className="absolute inset-0 w-full h-full"
+                src="https://www.youtube.com/embed/WzcL3T-m5CE?rel=0&modestbranding=1&color=white"
+                title="Calendar AI Demo"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-center mt-8">
+            <Link href="/signup" className="inline-flex items-center gap-2 bg-white text-ink-900 px-7 py-3 rounded-full font-body font-semibold text-base hover:shadow-lg hover:-translate-y-0.5 transition-all gap-2.5">
+              Try it yourself
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── How it works ─────────────────────── */}
       <section className="py-24 px-6">
         <div className="max-w-6xl mx-auto">
@@ -311,48 +351,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Demo Video ───────────────────────── */}
-      <section className="py-24 px-6 bg-ink-900">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <p className="font-body text-xs font-medium text-sage uppercase tracking-widest mb-3">See it in action</p>
-            <h2 className="font-display text-4xl text-cream-100 mb-4">Watch how it works</h2>
-            <p className="font-body text-base text-cream-300 max-w-xl mx-auto leading-relaxed">
-              See how a teacher uploads a syllabus and gets a full semester plan in under two minutes.
-            </p>
-          </div>
-
-          {/* Video frame */}
-          <div className="relative rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
-            {/* Decorative top bar */}
-            <div className="bg-ink-800 px-4 py-2.5 flex items-center gap-2 border-b border-white/8">
-              <div className="flex gap-1.5">
-                <div className="w-3 h-3 rounded-full bg-red-400/50" />
-                <div className="w-3 h-3 rounded-full bg-amber/50" />
-                <div className="w-3 h-3 rounded-full bg-sage/50" />
-              </div>
-              <span className="font-mono text-xs text-cream-300/50 ml-2">Calendar AI — Demo</span>
-            </div>
-            <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-              <iframe
-                className="absolute inset-0 w-full h-full"
-                src="https://www.youtube.com/embed/WzcL3T-m5CE?rel=0&modestbranding=1&color=white"
-                title="Calendar AI Demo"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-center mt-8">
-            <Link href="/signup" className="btn-sage px-7 py-3 text-base gap-2.5">
-              Try it yourself
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-      </section>
-
       {/* ── Features deep dive ───────────────── */}
       <section className="py-24 px-6 bg-ink-900">
         <div className="max-w-6xl mx-auto">
@@ -371,7 +369,9 @@ export default function HomePage() {
               { icon: Wand2, title: 'One calendar per course', desc: "Algebra 2, AP Lit, World History — each gets its own calendar. Clone a calendar to jump-start next year." },
             ].map((f, i) => (
               <div key={i} className="bg-white/5 border border-white/8 rounded-2xl p-6 hover:bg-white/8 transition-colors">
-                <f.icon className="w-5 h-5 text-sage mb-4" />
+                <div className="w-10 h-10 bg-sage/20 rounded-xl flex items-center justify-center mb-4">
+                  <f.icon className="w-5 h-5 text-sage" />
+                </div>
                 <h3 className="font-display text-lg text-cream-100 mb-2">{f.title}</h3>
                 <p className="font-body text-sm text-cream-300 leading-relaxed">{f.desc}</p>
               </div>
