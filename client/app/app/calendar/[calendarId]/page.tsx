@@ -540,7 +540,11 @@ function MonthlyView({ currentDate, dayData, pendingChanges, applying, onDayClic
   let week: Date[] = []
   allDays.forEach((d, i) => {
     week.push(d)
-    if (week.length === 5 || i === allDays.length - 1) { weeks.push(week); week = [] }
+    if (week.length === 5 || i === allDays.length - 1) {
+      // Only include the week if at least one day is in the current month
+      if (week.some(day => isSameMonth(day, currentDate))) weeks.push(week)
+      week = []
+    }
   })
 
   const [dragging, setDragging] = useState<string | null>(null)
@@ -633,10 +637,21 @@ function MonthlyView({ currentDate, dayData, pendingChanges, applying, onDayClic
                   {isClosed    && <div className="event-pill truncate bg-red-100 text-red-800 border-red-200">🚫 {activeLabel || 'No School'}</div>}
                   {isModified  && <div className="event-pill truncate bg-amber-100 text-amber-800 border-amber-200">🟡 {activeLabel || 'Modified'}</div>}
                   {isNote      && <div className="event-pill truncate bg-ink-100 text-ink-700 border-ink-200">📝 {activeLabel || 'Note'}</div>}
-                  {!isClosed && data?.milestones  && <div className="event-pill event-pill-milestone truncate">{data.milestones}</div>}
-                  {!isClosed && data?.assessments && <div className="event-pill event-pill-assessment truncate">{data.assessments}</div>}
-                  {!isClosed && data?.lessonPlan  && <div className="event-pill event-pill-lesson truncate">{data.lessonPlan.split('\n')[0]}</div>}
-                  {!isClosed && data?.hw          && <div className="event-pill event-pill-hw truncate">HW: {data.hw}</div>}
+                  {!isClosed && data?.milestones  && data.milestones.split('\n').filter(Boolean).map((line, i) => (
+                    <div key={i} className="event-pill event-pill-milestone truncate">{line}</div>
+                  ))}
+                  {!isClosed && data?.assessments && data.assessments.split('\n').filter(Boolean).map((line, i) => (
+                    <div key={i} className="event-pill event-pill-assessment truncate">{line}</div>
+                  ))}
+                  {!isClosed && data?.deadlines   && data.deadlines.split('\n').filter(Boolean).map((line, i) => (
+                    <div key={i} className="event-pill event-pill-assessment truncate">📅 {line}</div>
+                  ))}
+                  {!isClosed && data?.lessonPlan  && data.lessonPlan.split('\n').filter(Boolean).slice(0, 2).map((line, i) => (
+                    <div key={i} className="event-pill event-pill-lesson truncate">{line}</div>
+                  ))}
+                  {!isClosed && data?.hw          && data.hw.split('\n').filter(Boolean).map((line, i) => (
+                    <div key={i} className="event-pill event-pill-hw truncate">HW: {line}</div>
+                  ))}
                 </div>
                 {dayPending.slice(0, 2).map(c => (
                   <AIChangeCard key={c.id} change={c} applying={applying === c.id}

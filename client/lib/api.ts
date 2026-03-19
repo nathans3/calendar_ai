@@ -146,6 +146,7 @@ export interface CalEvent {
   location?: string
   description?: string
   repeatRule?: string
+  repeatEndDate?: string
 }
 
 export function saveSession(token: string, user: User) {

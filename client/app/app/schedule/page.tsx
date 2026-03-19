@@ -26,6 +26,7 @@ interface LocalEvent {
   location?: string; description?: string
   isClosedDay?: boolean // synthetic closed-day event from lesson notes
   repeatRule?: string
+  repeatEndDate?: string
   isPeriodBlock?: boolean // read-only period from bell schedule
   calendarId?: string    // for period blocks: the course calendar id
 }
@@ -61,7 +62,8 @@ function EventModal({
   const [schoolWide,  setSchoolWide]  = useState(editEvent?.schoolWide  || false)
   const [startTime,   setStartTime]   = useState(editEvent?.startTime   || `${String(defaultHour).padStart(2,'0')}:00`)
   const [endTime,     setEndTime]     = useState(editEvent?.endTime     || `${String(defaultHour + 1).padStart(2,'0')}:00`)
-  const [repeat,      setRepeat]      = useState(editEvent?.repeatRule  || 'none')
+  const [repeat,      setRepeat]      = useState(editEvent?.repeatRule    || 'none')
+  const [repeatEndDate, setRepeatEndDate] = useState(editEvent?.repeatEndDate || '')
   const [date,        setDate]        = useState(editEvent?.date        || defaultDate)
   const [location,    setLocation]    = useState(editEvent?.location    || '')
   const [description, setDescription] = useState(editEvent?.description || '')
@@ -75,6 +77,7 @@ function EventModal({
       endTime: allDay ? undefined : endTime,
       color, location, description,
       repeatRule: repeat,
+      repeatEndDate: repeat !== 'none' && repeatEndDate ? repeatEndDate : undefined,
     }, editEvent?.id)
     onClose()
   }
@@ -122,6 +125,21 @@ function EventModal({
               <option value="monthly">Monthly</option>
             </select>
           </div>
+          {repeat !== 'none' && (
+            <div className="flex items-center gap-3">
+              <Repeat className="w-4 h-4 text-ink-400 opacity-0" />
+              <div className="flex items-center gap-2 flex-1">
+                <span className="font-body text-xs text-ink-500 whitespace-nowrap">Ends on</span>
+                <input type="date" value={repeatEndDate} onChange={e => setRepeatEndDate(e.target.value)}
+                  min={date}
+                  placeholder="No end date"
+                  className="input-field text-sm py-2 flex-1" />
+                {repeatEndDate && (
+                  <button onClick={() => setRepeatEndDate('')} className="font-body text-xs text-ink-400 hover:text-red-500 transition-colors">Clear</button>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <MapPin className="w-4 h-4 text-ink-400" />
             <input type="text" placeholder="Location (optional)" value={location} onChange={e => setLocation(e.target.value)} className="input-field text-sm py-2 flex-1" />
@@ -219,7 +237,13 @@ function ViewEventModal({ event, onClose, onEdit, onDelete, onOpenCalendar }: {
             <div className="flex items-start gap-2 text-ink-600"><AlignLeft className="w-4 h-4 text-ink-400 mt-0.5" /><span className="font-body text-sm">{event.description}</span></div>
           )}
           {event.repeatRule && event.repeatRule !== 'none' && (
-            <div className="flex items-center gap-2 text-ink-600"><Repeat className="w-4 h-4 text-ink-400" /><span className="font-body text-sm capitalize">Repeats {event.repeatRule}</span></div>
+            <div className="flex items-center gap-2 text-ink-600">
+              <Repeat className="w-4 h-4 text-ink-400" />
+              <span className="font-body text-sm capitalize">
+                Repeats {event.repeatRule}
+                {event.repeatEndDate ? ` · ends ${format(new Date(event.repeatEndDate + 'T12:00'), 'MMM d, yyyy')}` : ''}
+              </span>
+            </div>
           )}
           {event.isPeriodBlock && event.calendarId && onOpenCalendar && (
             <button
@@ -501,6 +525,13 @@ function FullMonthView({ currentDate, events, onDayClick, onEventClick, onDragMo
     start: startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 }),
     end: endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 }),
   })
+  // Split into weeks and filter out any week that has no days in the current month
+  const allWeeks: Date[][] = []
+  for (let i = 0; i < allDays.length; i += 7) {
+    const week = allDays.slice(i, i + 7)
+    if (week.some(d => isSameMonth(d, currentDate))) allWeeks.push(week)
+  }
+  const filteredDays = allWeeks.flat()
 
   const onEvDragStart = (e: React.DragEvent, ev: LocalEvent) => {
     e.stopPropagation()
@@ -532,7 +563,7 @@ function FullMonthView({ currentDate, events, onDayClick, onEventClick, onDragMo
       </div>
       <div className="flex-1 overflow-auto">
       <div className="grid grid-cols-7 h-full" style={{ gridAutoRows: '1fr' }}>
-        {allDays.map(day => {
+        {filteredDays.map(day => {
           const ds = format(day, 'yyyy-MM-dd')
           const isClosed    = closedDates.has(ds)
           const dayEvents   = events.filter(e => e.date === ds)

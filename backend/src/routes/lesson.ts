@@ -26,6 +26,7 @@ router.get('/:courseId', async (req: AuthRequest, res: Response) => {
         id, course_id,
         TO_CHAR(date, 'YYYY-MM-DD') AS date,
         lesson_plan, deadlines, milestones, assessments, hw, notes,
+        metadata,
         updated_at
       FROM lessons
       WHERE course_id=$1`
@@ -43,6 +44,7 @@ router.get('/:courseId', async (req: AuthRequest, res: Response) => {
     // Return as an object keyed by date for easy frontend lookup
     const byDate: Record<string, any> = {}
     for (const row of result.rows) {
+      const meta = row.metadata || {}
       byDate[row.date] = {
         date: row.date,
         lessonPlan: row.lesson_plan,
@@ -51,6 +53,9 @@ router.get('/:courseId', async (req: AuthRequest, res: Response) => {
         assessments: row.assessments,
         hw: row.hw,
         notes: row.notes,
+        dayType: meta.dayType ?? null,
+        modifiedType: meta.modifiedType ?? null,
+        dayLabel: meta.dayLabel ?? '',
       }
     }
     res.json(byDate)
@@ -79,30 +84,34 @@ router.put('/:courseId/:date', async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ message: 'Calendar not found.' })
     }
 
-    const { lessonPlan = '', deadlines = '', milestones = '', assessments = '', hw = '', notes = '' } = req.body
+    const { lessonPlan = '', deadlines = '', milestones = '', assessments = '', hw = '', notes = '',
+            dayType = null, modifiedType = null, dayLabel = '' } = req.body
+    const metadata = { dayType: dayType || null, modifiedType: modifiedType || null, dayLabel: dayLabel || '' }
 
     // ── Closed-day guard ─────────────────────────────────
     // If this day already has a closure marker (notes field set), block all
     // lesson-content writes UNLESS the request is only updating the notes field
     // itself (e.g. the teacher is renaming or clearing the closure reason).
     const existing = await db.query(
-      `SELECT notes FROM lessons WHERE course_id=$1 AND date=$2`,
+      `SELECT notes, metadata FROM lessons WHERE course_id=$1 AND date=$2`,
       [courseId, date]
     )
     const existingNotes = existing.rows[0]?.notes || ''
+    const existingMeta  = existing.rows[0]?.metadata || {}
+    const isClosed = existingNotes || existingMeta.dayType === 'no_school'
     const isContentWrite = lessonPlan || deadlines || milestones || assessments || hw
-    if (existingNotes && isContentWrite && notes === existingNotes) {
+    if (isClosed && isContentWrite && notes === existingNotes && dayType !== 'no_school') {
       // Day is closed and caller is trying to add lesson content — reject
       return res.status(409).json({
-        message: `This day is marked as "${existingNotes}" and cannot accept lesson content. Clear the day note first to re-enable scheduling.`,
+        message: `This day is marked as "${existingNotes || 'No School'}" and cannot accept lesson content. Clear the day note first to re-enable scheduling.`,
         closedDay: true,
-        closureReason: existingNotes,
+        closureReason: existingNotes || 'No School',
       })
     }
 
     await db.query(
-      `INSERT INTO lessons(course_id, date, lesson_plan, deadlines, milestones, assessments, hw, notes)
-       VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO lessons(course_id, date, lesson_plan, deadlines, milestones, assessments, hw, notes, metadata)
+       VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT(course_id, date)
        DO UPDATE SET
          lesson_plan  = EXCLUDED.lesson_plan,
@@ -111,8 +120,9 @@ router.put('/:courseId/:date', async (req: AuthRequest, res: Response) => {
          assessments  = EXCLUDED.assessments,
          hw           = EXCLUDED.hw,
          notes        = EXCLUDED.notes,
+         metadata     = EXCLUDED.metadata,
          updated_at   = NOW()`,
-      [courseId, date, lessonPlan, deadlines, milestones, assessments, hw, notes]
+      [courseId, date, lessonPlan, deadlines, milestones, assessments, hw, notes, JSON.stringify(metadata)]
     )
 
     res.json({ message: 'Lesson saved.', courseId, date })

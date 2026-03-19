@@ -20,7 +20,12 @@ function expandRepeating(
   // Generate up to 3 years of future instances
   const hardLimit = new Date(start)
   hardLimit.setFullYear(hardLimit.getFullYear() + 3)
-  const cap = end < hardLimit ? end : hardLimit
+  let cap = end < hardLimit ? end : hardLimit
+  // If the event has a specific end date, honour it
+  if (event.repeatEndDate) {
+    const endDateCap = new Date(event.repeatEndDate + 'T12:00:00Z')
+    if (endDateCap < cap) cap = endDateCap
+  }
 
   const cursor = new Date(start)
   // Advance past the original event date to avoid duplicating it
@@ -59,7 +64,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         TO_CHAR(date, 'YYYY-MM-DD') AS date,
         TO_CHAR(start_time, 'HH24:MI') AS start_time,
         TO_CHAR(end_time, 'HH24:MI') AS end_time,
-        all_day, school_wide, repeat_rule, location, description, color
+        all_day, school_wide, repeat_rule,
+        TO_CHAR(repeat_end_date, 'YYYY-MM-DD') AS repeat_end_date,
+        location, description, color
       FROM events
       WHERE user_id=$1
         AND (
@@ -87,6 +94,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       allDay: e.all_day,
       schoolWide: e.school_wide,
       repeatRule: e.repeat_rule,
+      repeatEndDate: e.repeat_end_date || undefined,
       location: e.location,
       description: e.description,
       color: e.color,
@@ -125,7 +133,7 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     const {
       title, date, startTime, endTime,
       allDay = false, schoolWide = false,
-      repeatRule = 'none', location = '', description = '', color = 'blue'
+      repeatRule = 'none', repeatEndDate, location = '', description = '', color = 'blue'
     } = req.body
 
     if (!title?.trim() || !date) {
@@ -133,16 +141,20 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     }
 
     const result = await db.query(
-      `INSERT INTO events(user_id, title, date, start_time, end_time, all_day, school_wide, repeat_rule, location, description, color)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      `INSERT INTO events(user_id, title, date, start_time, end_time, all_day, school_wide, repeat_rule, repeat_end_date, location, description, color)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING id, title, TO_CHAR(date,'YYYY-MM-DD') AS date,
          TO_CHAR(start_time,'HH24:MI') AS start_time,
          TO_CHAR(end_time,'HH24:MI') AS end_time,
-         all_day, school_wide, repeat_rule, location, description, color`,
+         all_day, school_wide, repeat_rule,
+         TO_CHAR(repeat_end_date,'YYYY-MM-DD') AS repeat_end_date,
+         location, description, color`,
       [req.userId, title.trim(), date,
        allDay ? null : startTime || null,
        allDay ? null : endTime || null,
-       allDay, schoolWide, repeatRule, location, description, color]
+       allDay, schoolWide, repeatRule,
+       repeatRule !== 'none' && repeatEndDate ? repeatEndDate : null,
+       location, description, color]
     )
 
     const e = result.rows[0]
@@ -151,7 +163,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
       startTime: e.start_time || undefined,
       endTime: e.end_time || undefined,
       allDay: e.all_day, schoolWide: e.school_wide,
-      repeatRule: e.repeat_rule, location: e.location,
+      repeatRule: e.repeat_rule, repeatEndDate: e.repeat_end_date || undefined,
+      location: e.location,
       description: e.description, color: e.color,
     })
   } catch (err) {
@@ -165,7 +178,7 @@ async function updateEvent(req: AuthRequest, res: Response) {
   try {
     const {
       title, date, startTime, endTime,
-      allDay, schoolWide, repeatRule, location, description, color
+      allDay, schoolWide, repeatRule, repeatEndDate, location, description, color
     } = req.body
 
     // Don't update instances of repeating events (their id contains '__')
@@ -180,6 +193,7 @@ async function updateEvent(req: AuthRequest, res: Response) {
         all_day      = COALESCE($5, all_day),
         school_wide  = COALESCE($8, school_wide),
         repeat_rule  = COALESCE($9, repeat_rule),
+        repeat_end_date = $13::date,
         location     = COALESCE($10, location),
         description  = COALESCE($11, description),
         color        = COALESCE($12, color),
@@ -188,8 +202,11 @@ async function updateEvent(req: AuthRequest, res: Response) {
        RETURNING id, title, TO_CHAR(date,'YYYY-MM-DD') AS date,
          TO_CHAR(start_time,'HH24:MI') AS start_time,
          TO_CHAR(end_time,'HH24:MI') AS end_time,
-         all_day, school_wide, repeat_rule, location, description, color`,
-      [baseId, req.userId, title, date, allDay, startTime, endTime, schoolWide, repeatRule, location, description, color]
+         all_day, school_wide, repeat_rule,
+         TO_CHAR(repeat_end_date,'YYYY-MM-DD') AS repeat_end_date,
+         location, description, color`,
+      [baseId, req.userId, title, date, allDay, startTime, endTime, schoolWide, repeatRule, location, description, color,
+       repeatRule !== 'none' && repeatEndDate ? repeatEndDate : null]
     )
 
     if (result.rows.length === 0) {
@@ -202,7 +219,8 @@ async function updateEvent(req: AuthRequest, res: Response) {
       startTime: e.start_time || undefined,
       endTime: e.end_time || undefined,
       allDay: e.all_day, schoolWide: e.school_wide,
-      repeatRule: e.repeat_rule, location: e.location,
+      repeatRule: e.repeat_rule, repeatEndDate: e.repeat_end_date || undefined,
+      location: e.location,
       description: e.description, color: e.color,
     })
   } catch (err) {
