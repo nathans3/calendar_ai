@@ -287,14 +287,8 @@ export default function HomePage() {
       </section>
 
       {/* ── Demo Video ───────────────────────── */}
-      <section className="py-24 px-6 bg-ink-900">
+      <section className="py-16 px-6 bg-ink-900">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <h2 className="font-display text-4xl text-cream-100 mb-4">Watch how it works</h2>
-            <p className="font-body text-base text-cream-300 max-w-xl mx-auto leading-relaxed">
-              See how a teacher uploads a syllabus and gets a full semester plan in under two minutes.
-            </p>
-          </div>
 
           {/* Video frame */}
           <div className="relative rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
