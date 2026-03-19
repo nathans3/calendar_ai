@@ -264,31 +264,15 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── Feature strip ────────────────────── */}
-      <section className="py-5 bg-ink-900">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="flex flex-nowrap items-center justify-center gap-x-5 overflow-x-auto scrollbar-none">
-            {[
-              'AI lesson planning',
-              'Drag & reflow days',
-              'Syllabus upload',
-              'Monthly & weekly views',
-              'Smart constraint awareness',
-              'Accept / decline changes',
-            ].map((f, i) => (
-              <div key={i} className="flex items-center gap-2 text-cream-300 flex-shrink-0">
-                {i > 0 && <div className="w-px h-3 bg-white/15 mr-1 flex-shrink-0" />}
-                <div className="w-1 h-1 rounded-full bg-sage flex-shrink-0" />
-                <span className="font-body text-sm whitespace-nowrap">{f}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Demo Video ───────────────────────── */}
-      <section className="py-16 px-6 bg-ink-900">
+      <section className="py-24 px-6 bg-ink-900">
         <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="font-display text-4xl text-cream-100 mb-4">Watch how it works</h2>
+            <p className="font-body text-base text-cream-300 max-w-xl mx-auto leading-relaxed">
+              See how a teacher uploads a syllabus and gets a full semester plan in under two minutes.
+            </p>
+          </div>
 
           {/* Video frame */}
           <div className="relative rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
