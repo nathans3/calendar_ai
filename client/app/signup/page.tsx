@@ -1,10 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Calendar, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Calendar, Eye, EyeOff, AlertCircle, CheckCircle2, Check, X } from 'lucide-react'
 import { api, saveSession, ApiError } from '../../lib/api'
+
+function checkPassword(pw: string) {
+  return {
+    length:    pw.length >= 8,
+    uppercase: /[A-Z]/.test(pw),
+    lowercase: /[a-z]/.test(pw),
+    number:    /[0-9]/.test(pw),
+    special:   /[^A-Za-z0-9]/.test(pw),
+  }
+}
 
 export default function SignupPage() {
   const router = useRouter()
@@ -13,10 +23,14 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const [pwFocused, setPwFocused] = useState(false)
+
+  const pwChecks = useMemo(() => checkPassword(form.password), [form.password])
+  const pwValid  = Object.values(pwChecks).every(Boolean)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (form.password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    if (!pwValid) { setError('Please meet all password requirements.'); return }
     setLoading(true); setError('')
     try {
       const { token, user } = await api.auth.signup({
@@ -95,17 +109,38 @@ export default function SignupPage() {
                 <div>
                   <label className="label">Password</label>
                   <div className="relative">
-                    <input type={showPw ? 'text' : 'password'} required placeholder="Min. 6 characters"
-                      value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}
+                    <input type={showPw ? 'text' : 'password'} required placeholder="Min. 8 characters"
+                      value={form.password}
+                      onChange={e => setForm({ ...form, password: e.target.value })}
+                      onFocus={() => setPwFocused(true)}
+                      onBlur={() => setPwFocused(false)}
                       className="input-field pr-10" />
                     <button type="button" onClick={() => setShowPw(v => !v)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 transition-colors">
                       {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {(pwFocused || form.password.length > 0) && (
+                    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+                      {([
+                        [pwChecks.length,    '8+ characters'],
+                        [pwChecks.uppercase, 'Uppercase letter'],
+                        [pwChecks.lowercase, 'Lowercase letter'],
+                        [pwChecks.number,    'Number'],
+                        [pwChecks.special,   'Special character'],
+                      ] as [boolean, string][]).map(([met, label]) => (
+                        <div key={label} className={`flex items-center gap-1.5 font-body text-xs transition-colors ${met ? 'text-sage' : 'text-ink-400'}`}>
+                          {met
+                            ? <Check className="w-3 h-3 flex-shrink-0" />
+                            : <X    className="w-3 h-3 flex-shrink-0" />}
+                          {label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                <button type="submit" disabled={loading || !form.email || !form.password}
+                <button type="submit" disabled={loading || !form.email || !pwValid}
                   className={`btn-sage w-full justify-center py-3 mt-2 ${loading || !form.email || !form.password ? 'opacity-60 cursor-not-allowed' : ''}`}>
                   {loading ? (
                     <span className="flex items-center gap-2">

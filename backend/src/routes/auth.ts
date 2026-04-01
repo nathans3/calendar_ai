@@ -28,9 +28,16 @@ function signToken(userId: string) {
   return jwt.sign({ userId }, getSecret(), { expiresIn: JWT_EXPIRES } as jwt.SignOptions)
 }
 
+const strongPassword = z.string()
+  .min(8, 'Password must be at least 8 characters.')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter.')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter.')
+  .regex(/[0-9]/, 'Password must contain at least one number.')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character.')
+
 const SignupSchema = z.object({
   email: z.string().email().transform(s => s.trim().toLowerCase()),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: strongPassword,
   fullName: z.string().optional().default(''),
   schoolName: z.string().optional().default(''),
 })

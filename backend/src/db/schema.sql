@@ -106,3 +106,24 @@ CREATE INDEX IF NOT EXISTS idx_ai_logs_course      ON ai_change_logs(course_id);
 -- Vector similarity index (IVFFlat — fast approximate nearest neighbor)
 -- Only create if there are documents already; otherwise create after first upload
 -- CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+
+-- ─── Row Level Security ──────────────────────────────────────
+-- Run this block in the Supabase SQL Editor.
+-- This prevents anyone using the Supabase dashboard (anon/authenticated role)
+-- from reading other users' data. Your backend uses the service_role key which
+-- bypasses RLS intentionally — this only locks down direct DB access.
+
+ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE courses        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lessons        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_change_logs ENABLE ROW LEVEL SECURITY;
+
+-- Block all access via anon/authenticated roles (your backend uses service_role, unaffected)
+CREATE POLICY "no_direct_access" ON users          FOR ALL USING (false);
+CREATE POLICY "no_direct_access" ON courses        FOR ALL USING (false);
+CREATE POLICY "no_direct_access" ON lessons        FOR ALL USING (false);
+CREATE POLICY "no_direct_access" ON events         FOR ALL USING (false);
+CREATE POLICY "no_direct_access" ON documents      FOR ALL USING (false);
+CREATE POLICY "no_direct_access" ON ai_change_logs FOR ALL USING (false);
