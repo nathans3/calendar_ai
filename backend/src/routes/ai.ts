@@ -1081,22 +1081,26 @@ router.post('/generate-calendar', async (req: AuthRequest, res: Response) => {
     // We do a quick parse before the main extraction so we can use it as planStartDate
     let aiStartHint = ''
     if (startDate === 'ai') {
-      const schoolCalPreview = contextText.match(/\[SCHOOL CALENDAR\]([\s\S]*?)(?=\[|$)/i)?.[1]?.trim() || ''
-      if (schoolCalPreview) {
-        try {
-          const firstDayResp = await openai.chat.completions.create({
-            model: 'gpt-4o-mini', temperature: 0, max_tokens: 40,
-            messages: [
-              { role: 'system', content: 'Extract the FIRST day of school (first instructional day of the school year) from the text. Return ONLY a date in YYYY-MM-DD format. If not found, return null.' },
-              { role: 'user', content: schoolCalPreview.slice(0, 3000) },
-            ],
-          })
-          const raw = (firstDayResp.choices[0].message.content || '').trim()
-          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-            planStartDate = raw
-            console.log(`[generate-calendar] AI start mode: first day of school = ${planStartDate}`)
-          }
-        } catch {}
+      // Try the [SCHOOL CALENDAR] section first; fall back to the full context if missing/empty
+      const schoolCalSection = contextText.match(/\[SCHOOL CALENDAR\]([\s\S]*?)(?=\[|$)/i)?.[1]?.trim() || ''
+      const searchText = schoolCalSection || contextText
+      try {
+        const firstDayResp = await openai.chat.completions.create({
+          model: 'gpt-4o-mini', temperature: 0, max_tokens: 40,
+          messages: [
+            { role: 'system', content: 'Extract the FIRST day of school (the very first instructional day of the school year, typically in August or September) from the text. Return ONLY a date in YYYY-MM-DD format. If not found, return null.' },
+            { role: 'user', content: searchText.slice(0, 4000) },
+          ],
+        })
+        const raw = (firstDayResp.choices[0].message.content || '').trim()
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+          planStartDate = raw
+          console.log(`[generate-calendar] AI start mode: first day of school = ${planStartDate}`)
+        } else {
+          console.warn(`[generate-calendar] AI start mode: could not extract date (raw="${raw}") — falling back to today`)
+        }
+      } catch (e) {
+        console.warn(`[generate-calendar] AI start mode: extraction error — falling back to today`, e)
       }
       aiStartHint = '\n\n[PLANNING HINT]\nThis plan starts from the first instructional day of the school year as extracted from the school calendar.'
     }
