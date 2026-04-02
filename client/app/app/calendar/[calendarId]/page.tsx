@@ -1121,7 +1121,7 @@ function CheckpointDivider({ onRestore }: { onRestore: () => void }) {
 // All change state lives HERE. Changes are also surfaced on calendar cells via pendingChanges prop.
 function AISidebar({
   selectedDate, onClearSelection, courseId, dayData,
-  onApplyChange, onSetChanges, onRevert, onRefresh,
+  onApplyChange, onSetChanges, onStoreSnapshot, onRevert, onRefresh,
 }: {
   selectedDate: Date | null
   onClearSelection: () => void
@@ -1129,6 +1129,7 @@ function AISidebar({
   dayData: Record<string, DayData>
   onApplyChange: (dateStr: string, field: keyof DayData, value: string | PriorityTier) => void
   onSetChanges: (changes: AIChange[]) => void
+  onStoreSnapshot: (snapshot: Record<string, DayData>) => void
   onRevert: (snapshot: Record<string, DayData>) => void
   onRefresh: () => void
 }) {
@@ -1238,7 +1239,8 @@ function AISidebar({
     if (!found) return
     const c = found
 
-    // For moveLesson: when accepting either the source or dest diff,
+    // Snapshot current state before applying so Ctrl+Z can revert
+    onStoreSnapshot(dayDataRef.current)
     // we need to find the paired diff and accept it too, then apply the DB op once.
     if (c.tool === 'moveLesson') {
       const pairedRole = c.moveRole === 'source' ? 'destination' : 'source'
@@ -1338,6 +1340,9 @@ function AISidebar({
     const msg = messages.find(m => m.id === msgId)
     const toAccept = (msg?.changes || []).filter(c => c.status === 'pending')
     if (toAccept.length === 0) return
+
+    // Snapshot before bulk apply for Ctrl+Z
+    onStoreSnapshot(dayDataRef.current)
 
     // Mark all accepted in one synchronous state update
     setMessages(prev => prev.map(m => {
@@ -1827,6 +1832,9 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
   // All AI changes (all statuses) — synced from sidebar, used to render overlays on calendar
   const [allChanges, setAllChanges]   = useState<AIChange[]>([])
   const [applying, setApplying]       = useState<string | null>(null)
+  // Undo: single-level snapshot of dayData before the last accepted AI change batch
+  const [undoSnapshot, setUndoSnapshot] = useState<Record<string, DayData> | null>(null)
+  const [undoToast, setUndoToast]       = useState(false)
 
   // Derived: only pending changes go to the calendar cells
   const pendingChanges = allChanges.filter(c => c.status === 'pending')
@@ -1898,6 +1906,7 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
     return () => clearTimeout(t)
   }, [saveStatus])
 
+  // Called by AISidebar just before it applies a batch of AI changes
   const handleRevert = useCallback((snapshot: Record<string, DayData>) => {
     setDayData(snapshot)
     if (isDemo) return
@@ -1915,6 +1924,26 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
       }).catch(() => {})
     }
   }, [params.calendarId, isDemo])
+
+  const handleStoreSnapshot = useCallback((snapshot: Record<string, DayData>) => {
+    setUndoSnapshot(JSON.parse(JSON.stringify(snapshot)))
+  }, [])
+
+  // Ctrl+Z — revert to last stored snapshot
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        if (!undoSnapshot) return
+        e.preventDefault()
+        handleRevert(undoSnapshot)
+        setUndoSnapshot(null)
+        setUndoToast(true)
+        setTimeout(() => setUndoToast(false), 2500)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [undoSnapshot, handleRevert])
 
   // Calendar cell buttons call window globals set by AISidebar
   const handleAcceptFromCell = useCallback((id: string) => {
@@ -2000,6 +2029,12 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
                 onFocusedDateChange={(ds) => { if (ds) setSelectedDate(new Date(ds + 'T12:00:00')) }} />}
         </div>
         {/* Sidebar toggle — now handled by AI button in TopNav */}
+        {/* Undo toast */}
+        {undoToast && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-ink-900 text-cream-100 px-4 py-2.5 rounded-xl shadow-xl font-body text-xs font-medium pointer-events-none">
+            <RotateCcw className="w-3.5 h-3.5" /> Last AI change undone
+          </div>
+        )}
         {aiOpen && (
           <AISidebar
             selectedDate={selectedDate}
@@ -2008,6 +2043,7 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
             dayData={dayData}
             onApplyChange={handleDayDataChange}
             onSetChanges={setAllChanges}
+            onStoreSnapshot={handleStoreSnapshot}
             onRevert={handleRevert} onRefresh={refreshAllData} />
         )}
       </div>
