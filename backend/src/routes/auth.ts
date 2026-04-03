@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { z } from 'zod'
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 import { randomBytes } from 'crypto'
 import db from '../db/client'
 import { authenticate, AuthRequest } from '../middleware/auth'
@@ -27,26 +27,22 @@ function signToken(userId: string) {
   return jwt.sign({ userId }, getSecret(), { expiresIn: JWT_EXPIRES } as jwt.SignOptions)
 }
 
-// ── Nodemailer transporter (SMTP via env) ─────────────────
-function getMailer() {
-  return nodemailer.createTransport({
-    host:   process.env.SMTP_HOST   || 'smtp.gmail.com',
-    port:   Number(process.env.SMTP_PORT) || 587,
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER || '',
-      pass: process.env.SMTP_PASS || '',
-    },
-  })
-}
-
+// ── Resend email client (uses HTTPS port 443 — works on Render free tier) ──
 async function sendVerificationEmail(email: string, token: string) {
+  const apiKey    = process.env.RESEND_API_KEY || ''
   const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
-  const link = `${clientUrl}/verify-email?token=${token}`
-  const mailer = getMailer()
-  await mailer.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@calendarai.app',
-    to: email,
+  const from      = process.env.EMAIL_FROM || 'Calendar AI <noreply@calendarai.app>'
+  const link      = `${clientUrl}/verify-email?token=${token}`
+
+  if (!apiKey) {
+    console.warn('RESEND_API_KEY not set — skipping verification email')
+    return
+  }
+
+  const resend = new Resend(apiKey)
+  const { error } = await resend.emails.send({
+    from,
+    to:      email,
     subject: 'Verify your Calendar AI email',
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#fafaf8;border-radius:12px">
@@ -56,6 +52,8 @@ async function sendVerificationEmail(email: string, token: string) {
         <p style="color:#999;font-size:12px;margin-top:24px">Or paste this URL: ${link}</p>
       </div>`,
   })
+
+  if (error) throw new Error(error.message)
 }
 
 const strongPassword = z.string()
