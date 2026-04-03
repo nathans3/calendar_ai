@@ -31,7 +31,9 @@ function signToken(userId: string) {
 async function sendVerificationEmail(email: string, token: string) {
   const apiKey    = process.env.RESEND_API_KEY || ''
   const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
-  const from      = process.env.EMAIL_FROM || 'Calendar AI <noreply@calendarai.app>'
+  // Use Resend's shared sender by default — works without domain verification.
+  // Set EMAIL_FROM only after you've verified your own domain in Resend.
+  const from      = process.env.EMAIL_FROM || 'onboarding@resend.dev'
   const link      = `${clientUrl}/verify-email?token=${token}`
 
   if (!apiKey) {
@@ -54,6 +56,7 @@ async function sendVerificationEmail(email: string, token: string) {
   })
 
   if (error) throw new Error(error.message)
+  console.log(`Verification email sent to ${email}`)
 }
 
 const strongPassword = z.string()
