@@ -32,11 +32,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   auth: {
     signup: (data: { email: string; password: string; fullName?: string; schoolName?: string }) =>
-      request<{ token: string; user: User }>('/api/auth/signup', { method: 'POST', body: JSON.stringify(data) }),
+      request<{ token?: string; user?: User; requiresVerification?: boolean; email?: string; message?: string }>('/api/auth/signup', { method: 'POST', body: JSON.stringify(data) }),
     login: (data: { email: string; password: string }) =>
       request<{ token: string; user: User }>('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
     logout: () => request('/api/auth/logout', { method: 'POST' }),
     me: () => request<User>('/api/auth/me'),
+    resendVerification: (email: string) =>
+      request<{ message: string }>('/api/auth/resend-verification', { method: 'POST', body: JSON.stringify({ email }) }),
   },
 
   // ─── User Profile (periods & schedule settings) ────────

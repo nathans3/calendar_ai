@@ -6,24 +6,35 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ─── Users ──────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
-  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email            TEXT UNIQUE NOT NULL,
-  password_hash    TEXT NOT NULL,
-  full_name        TEXT NOT NULL DEFAULT '',
-  school_name      TEXT NOT NULL DEFAULT '',
-  plan             TEXT NOT NULL DEFAULT 'free',   -- 'free' | 'pro'
-  school_day_start TEXT NOT NULL DEFAULT '08:00',  -- HH:MM
-  school_day_end   TEXT NOT NULL DEFAULT '15:00',  -- HH:MM
-  periods          JSONB NOT NULL DEFAULT '[]',    -- Array of PeriodConfig objects
-  created_at       TIMESTAMPTZ DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ DEFAULT NOW()
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email                 TEXT UNIQUE NOT NULL,
+  password_hash         TEXT NOT NULL DEFAULT '',
+  full_name             TEXT NOT NULL DEFAULT '',
+  school_name           TEXT NOT NULL DEFAULT '',
+  plan                  TEXT NOT NULL DEFAULT 'free',   -- 'free' | 'pro'
+  school_day_start      TEXT NOT NULL DEFAULT '08:00',  -- HH:MM
+  school_day_end        TEXT NOT NULL DEFAULT '15:00',  -- HH:MM
+  periods               JSONB NOT NULL DEFAULT '[]',    -- Array of PeriodConfig objects
+  email_verified        BOOLEAN NOT NULL DEFAULT FALSE,
+  verification_token    TEXT,
+  verification_expires  TIMESTAMPTZ,
+  provider              TEXT NOT NULL DEFAULT 'local',  -- 'local' | 'google'
+  provider_id           TEXT,
+  created_at            TIMESTAMPTZ DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Migration: add columns if they don't exist yet (safe to re-run)
-ALTER TABLE users ADD COLUMN IF NOT EXISTS school_day_start TEXT NOT NULL DEFAULT '08:00';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS school_day_end   TEXT NOT NULL DEFAULT '15:00';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS periods          JSONB NOT NULL DEFAULT '[]';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login       TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_day_start      TEXT NOT NULL DEFAULT '08:00';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS school_day_end        TEXT NOT NULL DEFAULT '15:00';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS periods               JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login            TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified        BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token    TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_expires  TIMESTAMPTZ;
+-- OAuth: provider = 'local' | 'google'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS provider             TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id          TEXT;
 
 -- ─── Courses (Calendars) ────────────────────────────────────
 CREATE TABLE IF NOT EXISTS courses (

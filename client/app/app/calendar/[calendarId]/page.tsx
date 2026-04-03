@@ -1823,6 +1823,8 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
   const [aiOpen, setAiOpen]             = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [dayData, setDayData]           = useState<Record<string, DayData>>(isDemo ? buildDemoData() : {})
+  const dayDataRef = useRef<Record<string, DayData>>({})
+  useEffect(() => { dayDataRef.current = dayData }, [dayData])
   const [calendarInfo, setCalendarInfo] = useState<{ name: string; period: string }>(
     DEMO_CALENDAR_INFO[params.calendarId] || { name: 'Course Calendar', period: '' }
   )
@@ -1967,6 +1969,8 @@ export default function CalendarPage({ params }: { params: { calendarId: string 
 
   // Drag-and-drop: move all lesson data from one day to another
   const handleDragMove = useCallback((fromDs: string, toDs: string) => {
+    // Capture undo snapshot BEFORE mutating so Ctrl+Z can reverse the move
+    setUndoSnapshot(JSON.parse(JSON.stringify(dayDataRef.current)))
     let movedToData: DayData | undefined
     setDayData(prev => {
       const blank: DayData = { date: toDs, lessonPlan: '', deadlines: '', milestones: '', assessments: '', hw: '', notes: '' }

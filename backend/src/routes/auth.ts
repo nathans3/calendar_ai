@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { z } from 'zod'
+import nodemailer from 'nodemailer'
+import { randomBytes } from 'crypto'
 import db from '../db/client'
 import { authenticate, AuthRequest } from '../middleware/auth'
 
@@ -13,19 +15,47 @@ const COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax' as const,
-  maxAge: 7 * 24 * 60 * 60 * 1000,
+  maxAge: 30 * 24 * 60 * 60 * 1000,
 }
 
 // ── Read JWT_SECRET lazily at call time, NOT at module load time ──────────
-// This is critical: if this function were a module-level constant, it would
-// capture process.env.JWT_SECRET before dotenv has run — resulting in tokens
-// signed with the fallback secret that the middleware then fails to verify.
 function getSecret(): string {
   return process.env.JWT_SECRET || 'dev_secret_change_in_production'
 }
 
 function signToken(userId: string) {
   return jwt.sign({ userId }, getSecret(), { expiresIn: JWT_EXPIRES } as jwt.SignOptions)
+}
+
+// ── Nodemailer transporter (SMTP via env) ─────────────────
+function getMailer() {
+  return nodemailer.createTransport({
+    host:   process.env.SMTP_HOST   || 'smtp.gmail.com',
+    port:   Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER || '',
+      pass: process.env.SMTP_PASS || '',
+    },
+  })
+}
+
+async function sendVerificationEmail(email: string, token: string) {
+  const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+  const link = `${clientUrl}/verify-email?token=${token}`
+  const mailer = getMailer()
+  await mailer.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@calendarai.app',
+    to: email,
+    subject: 'Verify your Calendar AI email',
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;background:#fafaf8;border-radius:12px">
+        <h2 style="color:#1a1a1a;margin:0 0 8px">Verify your email</h2>
+        <p style="color:#555;margin:0 0 24px">Click the button below to activate your Calendar AI account. This link expires in 24 hours.</p>
+        <a href="${link}" style="display:inline-block;background:#4a7c59;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600">Verify email</a>
+        <p style="color:#999;font-size:12px;margin-top:24px">Or paste this URL: ${link}</p>
+      </div>`,
+  })
 }
 
 const strongPassword = z.string()
@@ -62,30 +92,28 @@ router.post('/signup', async (req: Request, res: Response) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12)
+    const verificationToken = randomBytes(32).toString('hex')
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h
 
-    // All new accounts get 'pro' so AI features work immediately
     const result = await db.query(
-      `INSERT INTO users(email, password_hash, full_name, school_name, plan)
-       VALUES($1,$2,$3,$4,'pro') RETURNING id, email, full_name, school_name, plan`,
-      [email, passwordHash, fullName, schoolName]
+      `INSERT INTO users(email, password_hash, full_name, school_name, plan, email_verified, verification_token, verification_expires, provider)
+       VALUES($1,$2,$3,$4,'pro',FALSE,$5,$6,'local') RETURNING id, email, full_name, school_name, plan`,
+      [email, passwordHash, fullName, schoolName, verificationToken, verificationExpires]
     )
     const user = result.rows[0]
-    const token = signToken(user.id)
 
-    res
-      .cookie('cal_ai_token', token, COOKIE_OPTS)
-      .status(201)
-      .json({
-        token,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.full_name,
-          schoolName: user.school_name,
-          plan: user.plan,
-        },
-        message: 'Account created successfully.',
-      })
+    // Send verification email (non-fatal — account is created regardless)
+    try {
+      await sendVerificationEmail(email, verificationToken)
+    } catch (mailErr) {
+      console.error('Verification email send error:', mailErr)
+    }
+
+    res.status(201).json({
+      requiresVerification: true,
+      email,
+      message: 'Account created. Please check your email to verify your address before logging in.',
+    })
   } catch (err) {
     console.error('Signup error:', err)
     res.status(500).json({ message: 'Server error. Please try again.' })
@@ -102,7 +130,7 @@ router.post('/login', async (req: Request, res: Response) => {
     const { email, password } = parsed.data
 
     const result = await db.query(
-      'SELECT id, email, password_hash, full_name, school_name, plan FROM users WHERE email=$1',
+      'SELECT id, email, password_hash, full_name, school_name, plan, email_verified, provider FROM users WHERE email=$1',
       [email]
     )
     if (result.rows.length === 0) {
@@ -110,9 +138,24 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     const user = result.rows[0]
+
+    // Google-only accounts have no password — tell them to use Google
+    if (user.provider === 'google' && !user.password_hash) {
+      return res.status(401).json({ message: 'This account uses Google sign-in. Please click "Continue with Google".' })
+    }
+
     const valid = await bcrypt.compare(password, user.password_hash)
     if (!valid) {
       return res.status(401).json({ message: 'Invalid email or password.' })
+    }
+
+    // Block login until email is verified
+    if (!user.email_verified) {
+      return res.status(403).json({
+        message: 'Please verify your email before logging in.',
+        requiresVerification: true,
+        email,
+      })
     }
 
     // Upgrade any existing free-plan users to pro on login
@@ -147,6 +190,183 @@ router.post('/login', async (req: Request, res: Response) => {
 // ── POST /api/auth/logout ─────────────────────────────────
 router.post('/logout', (_req: Request, res: Response) => {
   res.clearCookie('cal_ai_token').json({ message: 'Logged out.' })
+})
+
+// ── GET /api/auth/verify-email?token=... ─────────────────
+router.get('/verify-email', async (req: Request, res: Response) => {
+  const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+  try {
+    const token = (req.query.token as string || '').trim()
+    if (!token) return res.redirect(`${clientUrl}/verify-email?error=missing`)
+
+    const result = await db.query(
+      `SELECT id, email_verified, verification_expires FROM users
+       WHERE verification_token=$1`,
+      [token]
+    )
+    if (result.rows.length === 0) {
+      return res.redirect(`${clientUrl}/verify-email?error=invalid`)
+    }
+    const user = result.rows[0]
+    if (user.email_verified) {
+      return res.redirect(`${clientUrl}/verify-email?status=already`)
+    }
+    if (new Date(user.verification_expires) < new Date()) {
+      return res.redirect(`${clientUrl}/verify-email?error=expired`)
+    }
+    await db.query(
+      `UPDATE users SET email_verified=TRUE, verification_token=NULL, verification_expires=NULL, updated_at=NOW()
+       WHERE id=$1`,
+      [user.id]
+    )
+    return res.redirect(`${clientUrl}/verify-email?status=success`)
+  } catch (err) {
+    console.error('Verify email error:', err)
+    const clientUrl2 = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+    return res.redirect(`${clientUrl2}/verify-email?error=server`)
+  }
+})
+
+// ── POST /api/auth/resend-verification ───────────────────
+router.post('/resend-verification', async (req: Request, res: Response) => {
+  try {
+    const email = ((req.body.email as string) || '').trim().toLowerCase()
+    if (!email) return res.status(400).json({ message: 'Email required.' })
+
+    const result = await db.query(
+      'SELECT id, email_verified FROM users WHERE email=$1',
+      [email]
+    )
+    // Always respond the same way to prevent user enumeration
+    if (result.rows.length === 0 || result.rows[0].email_verified) {
+      return res.json({ message: 'If that email needs verification, a new link has been sent.' })
+    }
+
+    const token = randomBytes(32).toString('hex')
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    await db.query(
+      'UPDATE users SET verification_token=$1, verification_expires=$2, updated_at=NOW() WHERE id=$3',
+      [token, expires, result.rows[0].id]
+    )
+    try {
+      await sendVerificationEmail(email, token)
+    } catch (mailErr) {
+      console.error('Resend verification email error:', mailErr)
+    }
+    res.json({ message: 'Verification email sent. Please check your inbox.' })
+  } catch (err) {
+    console.error('Resend verification error:', err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
+// ── Google OAuth ──────────────────────────────────────────
+// Step 1: redirect browser to Google consent screen
+router.get('/google', (_req: Request, res: Response) => {
+  const clientId     = process.env.GOOGLE_CLIENT_ID || ''
+  const clientUrl    = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+  const backendUrl   = process.env.BACKEND_URL || 'http://localhost:4000'
+  const redirectUri  = `${backendUrl}/api/auth/google/callback`
+  const scope        = 'openid email profile'
+  const state        = randomBytes(16).toString('hex')
+
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth')
+  url.searchParams.set('client_id',     clientId)
+  url.searchParams.set('redirect_uri',  redirectUri)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('scope',         scope)
+  url.searchParams.set('state',         state)
+  url.searchParams.set('access_type',   'online')
+  url.searchParams.set('prompt',        'select_account')
+
+  // Store state in a short-lived cookie to validate on callback
+  res.cookie('oauth_state', state, { httpOnly: true, maxAge: 10 * 60 * 1000, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' })
+  res.redirect(url.toString())
+})
+
+// Step 2: Google redirects back here
+router.get('/google/callback', async (req: Request, res: Response) => {
+  const clientUrl  = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+  try {
+    const { code, state, error } = req.query as Record<string, string>
+
+    if (error) return res.redirect(`${clientUrl}/login?error=google_denied`)
+
+    // Validate state to prevent CSRF
+    const storedState = (req as any).cookies?.oauth_state
+    res.clearCookie('oauth_state')
+    if (!storedState || storedState !== state) {
+      return res.redirect(`${clientUrl}/login?error=oauth_state`)
+    }
+
+    const backendUrl  = process.env.BACKEND_URL || 'http://localhost:4000'
+    const redirectUri = `${backendUrl}/api/auth/google/callback`
+
+    // Exchange code for tokens
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id:     process.env.GOOGLE_CLIENT_ID     || '',
+        client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+        redirect_uri:  redirectUri,
+        grant_type:    'authorization_code',
+      }),
+    })
+    const tokenData: any = await tokenRes.json()
+    if (!tokenData.access_token) {
+      console.error('Google token exchange failed', tokenData)
+      return res.redirect(`${clientUrl}/login?error=google_token`)
+    }
+
+    // Fetch user info
+    const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    })
+    const googleUser: any = await userInfoRes.json()
+    const email      = (googleUser.email || '').toLowerCase()
+    const googleId   = googleUser.sub || ''
+    const fullName   = googleUser.name || ''
+
+    if (!email || !googleId) {
+      return res.redirect(`${clientUrl}/login?error=google_profile`)
+    }
+
+    // Upsert user: find by email OR provider_id
+    let userId: string
+    const existing = await db.query(
+      'SELECT id, provider FROM users WHERE email=$1',
+      [email]
+    )
+    if (existing.rows.length > 0) {
+      userId = existing.rows[0].id
+      // If they previously signed up with email/password, link Google to their account
+      await db.query(
+        `UPDATE users SET provider_id=$1, email_verified=TRUE, last_login=NOW(), updated_at=NOW()
+         WHERE id=$2`,
+        [googleId, userId]
+      )
+    } else {
+      // New user via Google — create account (no password, pre-verified)
+      const newUser = await db.query(
+        `INSERT INTO users(email, password_hash, full_name, plan, email_verified, provider, provider_id)
+         VALUES($1,'',$2,'pro',TRUE,'google',$3)
+         RETURNING id`,
+        [email, fullName, googleId]
+      )
+      userId = newUser.rows[0].id
+    }
+
+    const jwtToken = signToken(userId)
+    res
+      .cookie('cal_ai_token', jwtToken, COOKIE_OPTS)
+      .redirect(`${clientUrl}/login?token=${encodeURIComponent(jwtToken)}`)
+  } catch (err) {
+    console.error('Google OAuth callback error:', err)
+    const cu = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()
+    res.redirect(`${cu}/login?error=google_server`)
+  }
 })
 
 // ── GET /api/auth/me ──────────────────────────────────────
