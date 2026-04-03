@@ -30,7 +30,8 @@ function LoginContent() {
     // Handle token passed from Google OAuth callback
     const token = searchParams.get('token')
     if (token) {
-      // Fetch user info with the token and redirect
+      // Save token first so api.auth.me() can send it in the Authorization header
+      localStorage.setItem('cal_ai_token', token)
       api.auth.me().then(user => {
         saveSession(token, user)
         router.replace('/app')
