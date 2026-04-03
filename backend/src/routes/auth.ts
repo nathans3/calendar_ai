@@ -102,12 +102,11 @@ router.post('/signup', async (req: Request, res: Response) => {
     )
     const user = result.rows[0]
 
-    // Send verification email (non-fatal — account is created regardless)
-    try {
-      await sendVerificationEmail(email, verificationToken)
-    } catch (mailErr) {
-      console.error('Verification email send error:', mailErr)
-    }
+    // Send verification email fire-and-forget — do NOT await so the response is instant
+    setImmediate(() => {
+      sendVerificationEmail(email, verificationToken)
+        .catch(mailErr => console.error('Verification email send error:', mailErr))
+    })
 
     res.status(201).json({
       requiresVerification: true,
@@ -248,11 +247,11 @@ router.post('/resend-verification', async (req: Request, res: Response) => {
       'UPDATE users SET verification_token=$1, verification_expires=$2, updated_at=NOW() WHERE id=$3',
       [token, expires, result.rows[0].id]
     )
-    try {
-      await sendVerificationEmail(email, token)
-    } catch (mailErr) {
-      console.error('Resend verification email error:', mailErr)
-    }
+    // Fire-and-forget — don't block the response
+    setImmediate(() => {
+      sendVerificationEmail(email, token)
+        .catch(mailErr => console.error('Resend verification email error:', mailErr))
+    })
     res.json({ message: 'Verification email sent. Please check your inbox.' })
   } catch (err) {
     console.error('Resend verification error:', err)
@@ -335,6 +334,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
 
     // Upsert user: find by email OR provider_id
     let userId: string
+    let isNewUser = false
     const existing = await db.query(
       'SELECT id, provider FROM users WHERE email=$1',
       [email]
@@ -348,6 +348,7 @@ router.get('/google/callback', async (req: Request, res: Response) => {
         [googleId, userId]
       )
     } else {
+      isNewUser = true
       // New user via Google — create account (no password, pre-verified)
       const newUser = await db.query(
         `INSERT INTO users(email, password_hash, full_name, plan, email_verified, provider, provider_id)
@@ -359,9 +360,10 @@ router.get('/google/callback', async (req: Request, res: Response) => {
     }
 
     const jwtToken = signToken(userId)
+    const destination = isNewUser ? `${clientUrl}/app/onboarding` : `${clientUrl}/app`
     res
       .cookie('cal_ai_token', jwtToken, COOKIE_OPTS)
-      .redirect(`${clientUrl}/login?token=${encodeURIComponent(jwtToken)}`)
+      .redirect(`${clientUrl}/login?token=${encodeURIComponent(jwtToken)}&next=${encodeURIComponent(destination)}`)
   } catch (err) {
     console.error('Google OAuth callback error:', err)
     const cu = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim()

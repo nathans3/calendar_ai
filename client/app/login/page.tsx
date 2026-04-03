@@ -29,12 +29,15 @@ function LoginContent() {
 
     // Handle token passed from Google OAuth callback
     const token = searchParams.get('token')
+    const next  = searchParams.get('next')   // e.g. /app/onboarding for new Google users
     if (token) {
       // Save token first so api.auth.me() can send it in the Authorization header
       localStorage.setItem('cal_ai_token', token)
       api.auth.me().then(user => {
         saveSession(token, user)
-        router.replace('/app')
+        // Respect the ?next= destination (new users go to onboarding, returning users go to /app)
+        const destination = next && next.startsWith('/') ? next : '/app'
+        router.replace(destination)
       }).catch(() => setError('Google sign-in failed. Please try again.'))
     }
   }, [searchParams, router])
